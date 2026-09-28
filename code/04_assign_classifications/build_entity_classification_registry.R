@@ -61,14 +61,21 @@ is_uninformative <- function(x) {
 
 # ── Load data ──────────────────────────────────────────────────────────────────
 
-readable_files <- Sys.glob("04_outputs/final_classifications_readable_*.csv")
-if (length(readable_files) == 0) {
-  stop(
-    "No final_classifications_readable_*.csv in 04_outputs/. ",
-    "Run assign_final_classification.Rmd first."
-  )
+args <- commandArgs(trailingOnly = TRUE)
+
+if (length(args) >= 1 && nzchar(args[1])) {
+  readable_path <- args[1]
+  if (!file.exists(readable_path)) stop("Input file not found: ", readable_path)
+} else {
+  readable_files <- Sys.glob("04_outputs/final_classifications_readable_*.csv")
+  if (length(readable_files) == 0) {
+    stop(
+      "No final_classifications_readable_*.csv in 04_outputs/. ",
+      "Run assign_final_classification.Rmd first."
+    )
+  }
+  readable_path <- readable_files[order(file.mtime(readable_files), decreasing = TRUE)][1]
 }
-readable_path <- readable_files[order(file.mtime(readable_files), decreasing = TRUE)][1]
 cat("Reading classifications:", readable_path, "\n")
 cls <- read_csv(readable_path, col_types = cols(.default = "c"), show_col_types = FALSE)
 

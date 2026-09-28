@@ -1,0 +1,510 @@
+---
+title: "Reconcile PAC reviews"
+output: html_notebook
+---
+
+# Load data and packages
+
+```{r}
+library(dplyr)
+library(readr)
+library(stringr)
+```
+
+
+```{r}
+pac_review <- read_csv("04_inputs/pac_manual_review.csv",
+                                 col_types = cols(.default = "c", under_5k_amount = "d")) # manual review feedback 
+
+# add paths to any additional PAC review files here (oldest -> newest)
+# each will be merged into pac_review in order, with conflicts flagged.
+supplemental_review_paths <- c(
+  "04_inputs/pac_manual_review_09-08-26.csv",
+  "04_inputs/pac_review_queue_w_review_09-25-26.csv"
+)
+
+supplemental_reviews <- lapply(supplemental_review_paths, function(p) {
+  read_csv(p, col_types = cols(.default = "c", under_5k_amount = "d")) %>%
+    mutate(review_source = basename(p), pac_id = as.character(pac_id))
+}) %>% bind_rows()
+```
+
+```{r}
+supplemental_review_paths
+```
+
+
+### combine pac review into one dataframe
+
+```{r}
+# union subcategory labels that map to the broader "Unions" override in newer reviews.
+union_subcategory_overrides <- c(
+  "Misc Unions", "Unions", "Public Safety Unions", "Public Sector Unions",
+  "Social Services Unions", "Trade Unions"
+)
+
+pac_review <- pac_review %>% mutate(pac_id = as.character(pac_id))
+
+all_major_donors     <- list()
+all_new_pending      <- list()
+all_id_conflicts     <- list()
+all_name_conflicts   <- list()
+all_pending_resolved <- list()
+
+for (src in unique(supplemental_reviews$review_source)) {
+  supp <- supplemental_reviews %>% filter(review_source == src)
+  cat(sprintf("\n=== Merging: %s ===\n", src))
+
+  # 1. flag major donors
+  major_donor_rows <- supp %>%
+    filter(grepl("major donor", notes, ignore.case = TRUE))
+  all_major_donors[[src]] <- major_donor_rows %>%
+    mutate(review_source = src) %>%
+    select(review_source, pac_id, Contributor.Name, notes)
+  supp_clean <- supp %>%
+    filter(!grepl("major donor", notes, ignore.case = TRUE))
+
+  # 2. pendings pacs
+  new_pending <- supp_clean %>%
+    filter(industry_override_under_5k == "PENDING" |
+           unresolvable_reason == "additional_review_req")
+  all_new_pending[[src]] <- new_pending %>%
+    mutate(review_source = src) %>%
+    select(review_source, pac_id, Contributor.Name,
+           industry_override_under_5k, unresolvable_reason)
+
+  # 3. fill pac_id for no-id rows where reviewer coded one (notes = "coded id" or "coded id possible")
+  coded_id_rows <- supp_clean %>%
+    filter(grepl("coded id", notes, ignore.case = TRUE),
+           !is.na(pac_id), pac_id != "") %>%
+    distinct(Contributor.Name, .keep_all = TRUE) %>%
+    select(Contributor.Name, new_pac_id = pac_id)
+
+  if (nrow(coded_id_rows) > 0) {
+    pac_review <- pac_review %>%
+      left_join(coded_id_rows, by = "Contributor.Name") %>%
+      mutate(pac_id = if_else(
+        (is.na(pac_id) | pac_id == "") & !is.na(new_pac_id),
+        new_pac_id, pac_id
+      )) %>%
+      select(-new_pac_id)
+    cat(sprintf("  Filled pac_id for %d previously no-id row(s).\n", nrow(coded_id_rows)))
+  }
+
+  # 4. detect conflicts (flagged for awareness; new review wins on all overlaps)
+  # deduplicate to one override per pac_id/name before joining to avoid many-to-many warnings
+  old_id_overrides <- pac_review %>%
+    filter(!is.na(pac_id), pac_id != "",
+           !is.na(industry_override_under_5k), industry_override_under_5k != "") %>%
+    distinct(pac_id, override_old = industry_override_under_5k)
+
+  new_id_overrides <- supp_clean %>%
+    filter(!is.na(pac_id), pac_id != "",
+           !is.na(industry_override_under_5k), industry_override_under_5k != "") %>%
+    distinct(pac_id, override_new = industry_override_under_5k)
+
+  id_conflicts <- old_id_overrides %>%
+    inner_join(new_id_overrides, by = "pac_id", relationship = "many-to-many") %>%
+    filter(
+      override_old != override_new,
+      override_old != "PENDING",
+      !(override_old %in% union_subcategory_overrides & override_new == "Unions")
+    ) %>%
+    distinct() %>%
+    mutate(review_source = src)
+  all_id_conflicts[[src]] <- id_conflicts
+
+  old_name_overrides <- pac_review %>%
+    filter(is.na(pac_id) | pac_id == "",
+           !is.na(industry_override_under_5k), industry_override_under_5k != "") %>%
+    distinct(Contributor.Name, override_old = industry_override_under_5k)
+
+  new_name_overrides <- supp_clean %>%
+    filter(is.na(pac_id) | pac_id == "",
+           !is.na(industry_override_under_5k), industry_override_under_5k != "") %>%
+    distinct(Contributor.Name, override_new = industry_override_under_5k)
+
+  name_conflicts <- old_name_overrides %>%
+    inner_join(new_name_overrides, by = "Contributor.Name", relationship = "many-to-many") %>%
+    filter(
+      override_old != override_new,
+      override_old != "PENDING",
+      !(override_old %in% union_subcategory_overrides & override_new == "Unions")
+    ) %>%
+    distinct() %>%
+    mutate(review_source = src)
+  all_name_conflicts[[src]] <- name_conflicts
+
+  cat(sprintf("  Major donors: %d | PENDING/add'l review: %d | pac_id conflicts: %d | name conflicts: %d\n",
+              nrow(major_donor_rows), nrow(new_pending),
+              nrow(id_conflicts), nrow(name_conflicts)))
+
+  # 5. Apply new review's overrides (new review wins for all overlapping rows)
+  # - industry_override_under_5k: updated where new review has a valid (non-empty, non-PENDING) value
+  # - fec_id / is_federal_pac: updated for ALL overlapping rows (new review is more reliable)
+  # - unresolvable_reason: cleared for rows that now have a valid override, so they are
+  #   not incorrectly skipped by skip_pac_ids downstream
+
+  pending_pac_ids_before <- pac_review %>%
+    filter(!is.na(pac_id), pac_id != "", industry_override_under_5k == "PENDING") %>%
+    pull(pac_id) %>% unique()
+
+  # id-based: industry override — only where new review has a valid value
+  new_id_override <- supp_clean %>%
+    filter(!is.na(pac_id), pac_id != "",
+           !is.na(industry_override_under_5k),
+           industry_override_under_5k != "",
+           industry_override_under_5k != "PENDING") %>%
+    group_by(pac_id) %>% slice(1) %>% ungroup() %>%
+    select(pac_id, new_override = industry_override_under_5k)
+
+  # id-based: federal fields — all overlapping rows regardless of override status
+  new_id_federal_base <- supp_clean %>%
+    filter(!is.na(pac_id), pac_id != "") %>%
+    group_by(pac_id) %>% slice(1) %>% ungroup()
+  fed_cols <- intersect(c("fec_id", "is_federal_pac"), names(new_id_federal_base))
+  new_id_federal <- new_id_federal_base %>%
+    select(pac_id, all_of(fed_cols)) %>%
+    rename_with(~ paste0("new_", .), all_of(fed_cols))
+
+  pac_review <- pac_review %>%
+    left_join(new_id_override, by = "pac_id") %>%
+    mutate(industry_override_under_5k = if_else(
+      !is.na(pac_id) & pac_id != "" & !is.na(new_override),
+      new_override, industry_override_under_5k
+    )) %>%
+    select(-new_override) %>%
+    left_join(new_id_federal, by = "pac_id")
+
+  if ("new_fec_id" %in% names(pac_review))
+    pac_review <- pac_review %>%
+      mutate(fec_id = if_else(!is.na(pac_id) & pac_id != "" & !is.na(new_fec_id),
+                              new_fec_id, fec_id)) %>%
+      select(-new_fec_id)
+  if ("new_is_federal_pac" %in% names(pac_review))
+    pac_review <- pac_review %>%
+      mutate(is_federal_pac = if_else(!is.na(pac_id) & pac_id != "" & !is.na(new_is_federal_pac),
+                                      new_is_federal_pac, is_federal_pac)) %>%
+      select(-new_is_federal_pac)
+
+  # name-based: industry override only (federal fields not reliable for name-matched rows)
+  new_name_override <- supp_clean %>%
+    filter(is.na(pac_id) | pac_id == "",
+           !is.na(industry_override_under_5k),
+           industry_override_under_5k != "",
+           industry_override_under_5k != "PENDING") %>%
+    group_by(Contributor.Name) %>% slice(1) %>% ungroup() %>%
+    select(Contributor.Name, new_override = industry_override_under_5k)
+
+  pac_review <- pac_review %>%
+    left_join(new_name_override, by = "Contributor.Name") %>%
+    mutate(industry_override_under_5k = if_else(
+      (is.na(pac_id) | pac_id == "") & !is.na(new_override),
+      new_override, industry_override_under_5k
+    )) %>%
+    select(-new_override)
+
+  # clear unresolvable_reason = "additional_review_req" for rows that now have a valid override
+  pac_review <- pac_review %>%
+    mutate(unresolvable_reason = if_else(
+      !is.na(industry_override_under_5k) &
+      industry_override_under_5k != "" &
+      industry_override_under_5k != "PENDING" &
+      coalesce(unresolvable_reason, "") == "additional_review_req",
+      NA_character_,
+      unresolvable_reason
+    ))
+
+  # track resolved pending pacs
+  all_pending_resolved[[src]] <- pac_review %>%
+    filter(pac_id %in% pending_pac_ids_before,
+           !is.na(industry_override_under_5k),
+           industry_override_under_5k != "PENDING",
+           industry_override_under_5k != "") %>%
+    distinct(pac_id, override_new = industry_override_under_5k) %>%
+    mutate(review_source = src)
+
+  cat(sprintf("  Applied new overrides to overlapping rows (%d PENDING resolved).\n",
+              nrow(all_pending_resolved[[src]])))
+
+  # 6. append new rows
+  old_pac_ids_now <- pac_review %>% filter(!is.na(pac_id), pac_id != "") %>% pull(pac_id) %>% unique()
+  old_names_noid  <- pac_review %>% filter(is.na(pac_id) | pac_id == "") %>% pull(Contributor.Name) %>% unique()
+
+  # for no-id rows, also skip if any name_variant already appears in old review
+  new_rows_noid <- supp_clean %>% filter(is.na(pac_id) | pac_id == "")
+  if ("name_variants" %in% names(new_rows_noid) && nrow(new_rows_noid) > 0) {
+    new_rows_noid <- new_rows_noid %>%
+      rowwise() %>%
+      mutate(covered_by_variant = !is.na(name_variants) && name_variants != "" &&
+               any(trimws(strsplit(name_variants, "\\|")[[1]]) %in% old_names_noid)) %>%
+      ungroup() %>%
+      filter(!Contributor.Name %in% old_names_noid, !covered_by_variant) %>%
+      select(-covered_by_variant)
+  } else {
+    new_rows_noid <- new_rows_noid %>% filter(!Contributor.Name %in% old_names_noid)
+  }
+
+  new_rows <- bind_rows(
+    supp_clean %>% filter(!is.na(pac_id), pac_id != "", !pac_id %in% old_pac_ids_now),
+    new_rows_noid
+  )
+
+  for (col in intersect(names(new_rows), names(pac_review))) {
+    if (is.numeric(pac_review[[col]]) && !is.numeric(new_rows[[col]]))
+      new_rows[[col]] <- as.numeric(new_rows[[col]])
+    else if (is.character(pac_review[[col]]) && !is.character(new_rows[[col]]))
+      new_rows[[col]] <- as.character(new_rows[[col]])
+  }
+
+  pac_review <- bind_rows(pac_review, new_rows)
+  cat(sprintf("  Added %d new row(s). pac_review now has %d rows total.\n",
+              nrow(new_rows), nrow(pac_review)))
+}
+
+cat(sprintf("\nFinal pac_review: %d rows, %d with no pac_id (name-matched)\n",
+            nrow(pac_review),
+            sum(is.na(pac_review$pac_id) | pac_review$pac_id == "")))
+```
+
+### post-merge: fix federal flags and propagate overrides by fec_id
+
+```{r}
+# 1. propagate fec_id within pac_id groups
+#    same pac_id can span multiple rows where only one row got a coded fec_id from review
+fec_by_pac_id <- pac_review %>%
+  filter(!is.na(pac_id), pac_id != "", !is.na(fec_id), fec_id != "") %>%
+  group_by(pac_id) %>%
+  slice(1) %>%
+  ungroup() %>%
+  select(pac_id, fec_id_fill = fec_id)
+
+pac_review <- pac_review %>%
+  left_join(fec_by_pac_id, by = "pac_id") %>%
+  mutate(fec_id = coalesce(fec_id, fec_id_fill)) %>%
+  select(-fec_id_fill)
+
+# 2. any row with a non-NA fec_id is a federal PAC
+pac_review <- pac_review %>%
+  mutate(is_federal_pac = if_else(
+    !is.na(fec_id) & fec_id != "",
+    "TRUE", is_federal_pac
+  ))
+
+# 2b. propagate is_federal_pac = "TRUE" across all rows in the same pac_id group
+fed_pac_ids <- pac_review %>%
+  filter(!is.na(pac_id), pac_id != "", coalesce(is_federal_pac, "") == "TRUE") %>%
+  distinct(pac_id)
+
+pac_review <- pac_review %>%
+  mutate(is_federal_pac = if_else(
+    !is.na(pac_id) & pac_id != "" & pac_id %in% fed_pac_ids$pac_id,
+    "TRUE", is_federal_pac
+  ))
+
+# 3. propagate industry override within fec_id groups
+#    if multiple pac_ids share a fec_id, they should have consistent overrides.
+#    where there is exactly one distinct non-PENDING override -> fill into rows that are missing/PENDING.
+#    where overrides genuinely conflict -> warn and print for manual review.
+fec_canonical <- pac_review %>%
+  filter(!is.na(fec_id), fec_id != "",
+         !is.na(industry_override_under_5k),
+         industry_override_under_5k != "",
+         industry_override_under_5k != "PENDING") %>%
+  group_by(fec_id) %>%
+  summarize(
+    n_distinct = n_distinct(industry_override_under_5k),
+    canonical  = dplyr::first(industry_override_under_5k),
+    .groups = "drop"
+  )
+
+fec_id_conflicts <- fec_canonical %>% filter(n_distinct > 1)
+if (nrow(fec_id_conflicts) > 0) {
+  warning(sprintf(
+    "%d fec_id group(s) have conflicting industry overrides across pac_ids — manual review needed.",
+    nrow(fec_id_conflicts)
+  ))
+  print(pac_review %>%
+    filter(fec_id %in% fec_id_conflicts$fec_id) %>%
+    select(fec_id, pac_id, Contributor.Name, industry_override_under_5k) %>%
+    arrange(fec_id))
+}
+
+fec_propagate <- fec_canonical %>%
+  filter(n_distinct == 1) %>%
+  select(fec_id, fec_canonical_override = canonical)
+
+pac_review <- pac_review %>%
+  left_join(fec_propagate, by = "fec_id") %>%
+  mutate(industry_override_under_5k = if_else(
+    !is.na(fec_id) & fec_id != "" & !is.na(fec_canonical_override) &
+    (is.na(industry_override_under_5k) | industry_override_under_5k == "" |
+     industry_override_under_5k == "PENDING"),
+    fec_canonical_override,
+    industry_override_under_5k
+  )) %>%
+  select(-fec_canonical_override)
+
+cat(sprintf(
+  "Rows with fec_id but is_federal_pac != 'TRUE' remaining: %d\n",
+  sum(!is.na(pac_review$fec_id) & pac_review$fec_id != "" &
+      coalesce(pac_review$is_federal_pac, "") != "TRUE", na.rm = TRUE)
+))
+cat(sprintf(
+  "fec_id override propagation: %d unambiguous fec_id group(s) propagated, %d conflict(s) flagged\n",
+  nrow(fec_propagate), nrow(fec_id_conflicts)
+))
+```
+
+
+
+### deduplicate pac_review to one row per pac_id
+
+```{r}
+# check for conflicting industry overrides across duplicate rows before collapsing
+pac_id_override_conflicts <- pac_review %>%
+  filter(!is.na(pac_id), pac_id != "") %>%
+  group_by(pac_id) %>%
+  summarise(
+    n_valid_overrides = n_distinct(industry_override_under_5k[
+      !is.na(industry_override_under_5k) &
+      industry_override_under_5k != "" &
+      industry_override_under_5k != "PENDING"
+    ]),
+    conflicting_values = paste(sort(unique(industry_override_under_5k[
+      !is.na(industry_override_under_5k) &
+      industry_override_under_5k != "" &
+      industry_override_under_5k != "PENDING"
+    ])), collapse = " | "),
+    .groups = "drop"
+  ) %>%
+  filter(n_valid_overrides > 1)
+
+if (nrow(pac_id_override_conflicts) > 0) {
+  warning(sprintf(
+    "%d pac_id(s) have conflicting industry overrides across duplicate rows — manual resolution needed.",
+    nrow(pac_id_override_conflicts)
+  ))
+  print(pac_review %>%
+    filter(pac_id %in% pac_id_override_conflicts$pac_id) %>%
+    select(pac_id, Contributor.Name, industry_override_under_5k, is_federal_pac, fec_id) %>%
+    arrange(pac_id))
+} else {
+  cat("No industry override conflicts across duplicate pac_id rows.\n")
+}
+
+# collapse to one row per pac_id, combining best values across duplicates
+pac_review_noid <- pac_review %>% filter(is.na(pac_id) | pac_id == "")
+
+pac_review <- pac_review %>%
+  filter(!is.na(pac_id), pac_id != "") %>%
+  group_by(pac_id) %>%
+  summarise(
+    across(everything(), first),
+    # "TRUE" wins if any row in the group has it
+    is_federal_pac = if_else(
+      any(coalesce(is_federal_pac, "") == "TRUE"), "TRUE", first(is_federal_pac)
+    ),
+    # take first non-NA, non-empty, non-PENDING override; fall back to first value
+    industry_override_under_5k = {
+      valid <- industry_override_under_5k[
+        !is.na(industry_override_under_5k) &
+        industry_override_under_5k != "" &
+        industry_override_under_5k != "PENDING"
+      ]
+      if (length(valid) > 0) valid[1] else first(industry_override_under_5k)
+    },
+    .groups = "drop"
+  ) %>%
+  bind_rows(pac_review_noid)
+
+# merge no-id rows into id-matched rows where name matches (case-insensitive)
+id_names_upper <- pac_review %>%
+  filter(!is.na(pac_id), pac_id != "") %>%
+  mutate(name_key = toupper(trimws(Contributor.Name))) %>%
+  select(matched_pac_id = pac_id, name_key)
+
+noid_candidates <- pac_review %>%
+  filter(is.na(pac_id) | pac_id == "") %>%
+  mutate(name_key = toupper(trimws(Contributor.Name))) %>%
+  inner_join(id_names_upper, by = "name_key") %>%
+  select(-pac_id) %>%
+  rename(pac_id = matched_pac_id)
+
+if (nrow(noid_candidates) > 0) {
+  cat(sprintf("%d no-id row(s) matched to an id-matched row by name — merging and removing duplicates:\n",
+              nrow(noid_candidates)))
+  print(noid_candidates %>%
+    select(name_key, pac_id, industry_override_under_5k, is_federal_pac, fec_id))
+
+  # fill missing override on id row from no-id row where id row has none
+  noid_fill <- noid_candidates %>%
+    filter(!is.na(industry_override_under_5k),
+           industry_override_under_5k != "",
+           industry_override_under_5k != "PENDING") %>%
+    distinct(pac_id, .keep_all = TRUE) %>%
+    select(pac_id, noid_override = industry_override_under_5k)
+
+  pac_review <- pac_review %>%
+    left_join(noid_fill, by = "pac_id") %>%
+    mutate(industry_override_under_5k = if_else(
+      !is.na(pac_id) & pac_id != "" & !is.na(noid_override) &
+      (is.na(industry_override_under_5k) | industry_override_under_5k == "" |
+       industry_override_under_5k == "PENDING"),
+      noid_override, industry_override_under_5k
+    )) %>%
+    select(-noid_override)
+
+  # drop the no-id rows that were merged into id rows
+  merged_name_keys <- noid_candidates %>% pull(name_key) %>% unique()
+  pac_review <- pac_review %>%
+    filter(
+      !is.na(pac_id) & pac_id != "" |
+      !toupper(trimws(Contributor.Name)) %in% merged_name_keys
+    )
+} else {
+  cat("No no-id rows matched to id-matched rows by name.\n")
+}
+
+cat(sprintf(
+  "pac_review after dedup: %d rows (%d with pac_id, %d without)\n",
+  nrow(pac_review),
+  sum(!is.na(pac_review$pac_id) & pac_review$pac_id != ""),
+  sum(is.na(pac_review$pac_id) | pac_review$pac_id == "")
+))
+```
+
+### data checks (can skip to next section)
+
+```{r}
+# major donors
+bind_rows(all_major_donors)
+
+# inspect conflicts
+bind_rows(all_id_conflicts)
+
+# inspect name conflicts
+bind_rows(all_name_conflicts)
+
+# inspect newly resolved pacs
+bind_rows(all_pending_resolved)
+```
+
+```{r}
+# make sure fed flag persisted
+fed_ids <- supplemental_reviews %>% filter(is_federal_pac == "TRUE", !is.na(pac_id)) %>% pull(pac_id)
+pac_review %>% filter(pac_id %in% fed_ids) %>% distinct(is_federal_pac)
+
+#pac_review %>% filter(!is.na(fec_id) & coalesce(is_federal_pac, "") != "TRUE") #%>% distinct(is_federal_pac)
+#pac_review %>% filter(!is.na(pac_id)) %>% group_by(pac_id) %>% filter(n_distinct(industry_override_under_5k) > 1)
+pac_review %>% filter(!is.na(fec_id)) %>% group_by(fec_id) %>% filter(n_distinct(industry_override_under_5k) > 1)
+#pac_review %>% filter(!is.na(pac_id)) %>% group_by(pac_id) %>% filter(n_distinct(fec_id) > 1 | n_distinct(is_federal_pac) > 1) %>% arrange(pac_id)
+```
+
+# Write output
+
+```{r}
+write_csv(pac_review, "04_inputs/pac_manual_review_reconciled.csv")
+cat(sprintf("pac_manual_review_reconciled.csv written: %d rows\n", nrow(pac_review)))
+```
+

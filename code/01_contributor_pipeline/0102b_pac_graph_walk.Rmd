@@ -57,6 +57,28 @@ id_corrections <- read_sheet(
     resolved       = !is.na(resolved) & tolower(str_trim(resolved)) != "false",
     is_fed_pac     = tolower(str_trim(coalesce(is_fed_pac, ""))) %in% c("true", "1", "yes")
   )
+
+# only apply where the id was incorrect (not missing)
+id_corrections_with_id <- id_corrections %>%
+  filter(str_trim(Contributor.ID) != "")
+```
+
+```{r}
+# load missing id data
+missing_id_corrections <- read_sheet(
+  "https://docs.google.com/spreadsheets/d/1UnO3wldvEo84Md0ac5jbpg4SqWzvPle3yh15e_DGAVk",
+  sheet = "missing_id_corrections",
+  col_types = "c"
+) %>%
+  select(contributor_name, recipient_committee_id, amount, start_date,
+         contributor_city, corrected_id, is_federal_pac)
+
+filer_id_patch <- read_sheet(
+  "https://docs.google.com/spreadsheets/d/1UnO3wldvEo84Md0ac5jbpg4SqWzvPle3yh15e_DGAVk",
+  sheet = "filer_id_patch",
+  col_types = "c"
+) %>%
+  select(Contributor.ID, FILER_ID, FILER_TYPE)
 ```
 
 
@@ -64,7 +86,9 @@ id_corrections <- read_sheet(
 
 ```{r}
 #pac_input <- read.csv("01_outputs/pac_input_09-07-26.csv", colClasses = "character")
-pac_input <- read.csv("01_outputs/new_prop_pacs.csv", colClasses = "character")
+#pac_input <- read.csv("01_outputs/new_prop_pacs.csv", colClasses = "character")
+pac_input <- read.csv("01_outputs/pac_input_09-26-26.csv", colClasses = "character")
+nrow(pac_input)
 ```
 
 ```{r}
@@ -72,12 +96,29 @@ pac_input <- read.csv("01_outputs/new_prop_pacs.csv", colClasses = "character")
 pac_input <- pac_input %>%
   mutate(is_fed_pac = as.logical(coalesce(is_fed_pac, "FALSE")))
 
-pac_input <- apply_contributor_corrections(pac_input, id_corrections)
+pac_input <- apply_contributor_corrections(pac_input, id_corrections_with_id)
 
 # re-apply flag
 pac_input <- pac_input %>%
   mutate(is_fed_pac = is_fed_pac | has_fed_pac_language(Contributor.Name))
 
+cat(sprintf(
+  "pac_input after corrections: %d rows; %d with FILER_ID; %d flagged is_fed_pac\n",
+  nrow(pac_input),
+  sum(!is.na(pac_input$FILER_ID) & pac_input$FILER_ID != ""),
+  sum(coalesce(pac_input$is_fed_pac, FALSE))
+))
+```
+
+
+```{r}
+pac_input %>% filter(effective_Contributor.ID == "NA")
+pac_input %>% filter(FILER_TYPE != "RECIPIENT COMMITTEE")
+```
+
+
+```{r, eval=FALSE}
+# SKIP THIS CHUNK
 # re-derive FILER_ID and FILER_TYPE for any seeds still missing them after corrections
 pac_input <- pac_input %>%
   left_join(
@@ -92,13 +133,6 @@ pac_input <- pac_input %>%
     FILER_TYPE = coalesce(na_if(FILER_TYPE, ""), derived_filer_type, "RECIPIENT COMMITTEE")
   ) %>%
   select(-derived_filer_id, -derived_filer_type)
-
-cat(sprintf(
-  "pac_input after corrections: %d rows; %d with FILER_ID; %d flagged is_fed_pac\n",
-  nrow(pac_input),
-  sum(!is.na(pac_input$FILER_ID) & pac_input$FILER_ID != ""),
-  sum(coalesce(pac_input$is_fed_pac, FALSE))
-))
 ```
 
 
@@ -110,9 +144,9 @@ pac_input %>% filter(Contributor.Name == "DRIVE Committee" | Contributor.Name ==
 
 
 ```{r}
-# real in feedback from manual review of pacs
+#  read in reconciled version of pac manual review
 pac_manual_review <- read_csv(
-  "../04_assign_classifications/04_inputs/pac_manual_review.csv",
+  "../04_assign_classifications/04_inputs/pac_manual_review_reconciled.csv",
   col_types = cols(.default = "c")
 ) %>%
   mutate(
@@ -124,17 +158,61 @@ pac_manual_review <- read_csv(
       trimws(coalesce(industry_override_under_5k, "")) %in% c("", "PENDING")
     ),
     is_candidates_pp = trimws(coalesce(industry_override_under_5k, "")) == "Candidates/Political Parties",
+    is_candidate =  trimws(coalesce(note_subcategory, "")) == "Candidate" & !grepl("ballot measure",tolower(Contributor.Name)) &
+                      !grepl("government committee",tolower(Contributor.Name)) & !grepl("apartment association",tolower(Contributor.Name)),
+    #is_ballot_measure = grepl("ballot measure",tolower(Contributor.Name)),
     is_fec_federal   = !is.na(fec_id)
   )
 ```
 
+```{r}
+pac_manual_review %>% filter(is_candidates_pp == TRUE, is_candidate != TRUE)
+```
+
+Potential errors: 
+Duane Morris Government Committee
+Apartment Association of Greater Los Angeles PAC
 
 # Prepare contributions
 
 Apply contributor ID corrections and add PAC flags.
 
+
 ```{r}
-contributions <- apply_contributor_corrections(contributions_full, id_corrections)
+contributions <- apply_contributor_corrections(contributions_full, id_corrections_with_id)
+
+# fill effective_Contributor.ID for records where id was missing (not incorrect)
+missing_to_apply <- missing_id_corrections %>%
+  transmute(
+    contributor_name,
+    .recip  = as.character(recipient_committee_id),
+    .amount = as.character(amount),
+    .date   = as.character(start_date),
+    .city   = as.character(contributor_city),
+    corrected_id,
+    missing_is_federal_pac = tolower(str_trim(coalesce(is_federal_pac, ""))) == "true"
+  ) %>%
+  distinct(contributor_name, .recip, .amount, .date, .city, .keep_all = TRUE)
+
+contributions <- contributions %>%
+  mutate(
+    .recip  = as.character(Recipient.Committee.ID),
+    .amount = as.character(Amount),
+    .date   = as.character(Start.Date),
+    .city   = as.character(Contributor.City)
+  ) %>%
+  left_join(missing_to_apply,
+            by = c("Contributor.Name" = "contributor_name", ".recip", ".amount", ".date", ".city")) %>%
+  mutate(
+    effective_Contributor.ID = if_else(
+      !is.na(corrected_id) & corrected_id != "" &
+        (is.na(effective_Contributor.ID) | effective_Contributor.ID == ""),
+      corrected_id,
+      effective_Contributor.ID
+    ),
+    is_fed_pac = coalesce(is_fed_pac, FALSE) | coalesce(missing_is_federal_pac, FALSE)
+  ) %>%
+  select(-corrected_id, -missing_is_federal_pac, -.recip, -.amount, -.date, -.city)
 
 # Contributor.ID (XREF_FILER_ID) → std_contributor_id (FILER_ID)
 contributions <- contributions %>%
@@ -143,12 +221,23 @@ contributions <- contributions %>%
       rename(std_contributor_id = FILER_ID),
     by = c("effective_Contributor.ID" = "XREF_FILER_ID")
   ) %>%
-  mutate(std_contributor_id = as.character(std_contributor_id))
+  mutate(std_contributor_id = as.character(std_contributor_id)) %>%
+  left_join(
+    filer_id_patch %>% rename(patch_std_id = FILER_ID, patch_FILER_TYPE = FILER_TYPE),
+    by = c("effective_Contributor.ID" = "Contributor.ID")
+  ) %>%
+  mutate(
+    std_contributor_id = coalesce(std_contributor_id, patch_std_id),
+    FILER_TYPE         = coalesce(FILER_TYPE, patch_FILER_TYPE)
+  ) %>%
+  select(-patch_std_id, -patch_FILER_TYPE)
 ```
+
 
 ```{r}
 contributions <- contributions %>%
   mutate(
+    effective_Contributor.ID = na_if(effective_Contributor.ID, "NA"),
     has_id             = !is.na(effective_Contributor.ID) & effective_Contributor.ID != "",
     is_fed_pac         = has_fed_pac_language(Contributor.Name) | coalesce(is_fed_pac, FALSE),
     is_self            = !is.na(std_contributor_id) & std_contributor_id == Recipient.Committee.ID,
@@ -170,7 +259,7 @@ universe but not traversed — we do not classify these PACs by their $5k contri
 
 ```{r}
 no_traverse_from_review <- pac_manual_review %>%
-  filter(!is.na(pac_id), is_resolved, is_candidates_pp | is_fec_federal) %>%
+  filter(!is.na(pac_id), is_resolved, is_candidate | is_fec_federal) %>% # changed from is_candidates_pp
   pull(pac_id) %>%
   as.character() %>%
   unique()
@@ -283,6 +372,13 @@ seed_ids <- pac_input %>%
 cat(sprintf("Seeds: %d PAC FILER_IDs from pac_input.csv\n", length(seed_ids)))
 ```
 
+```{r}
+length(seed_ids)
+seed_ids <- unique(c(seed_ids,"942524"))
+length(seed_ids)
+```
+
+
 
 ### Walk PAC graph
 
@@ -335,6 +431,7 @@ print(candidate_pac_in_universe)
 ```{r}
 no_id_pacs <- pac_universe %>% filter(traversed, has_pac_no_id_contributors)
 
+# this isn't very helpful.
 contributions %>%
   filter(is_pac_no_id, Recipient.Committee.ID %in% no_id_pacs$pac_id) %>%
   distinct(Contributor.Name, Recipient.Committee.ID, Recipient.Committee,Amount) %>%
@@ -355,7 +452,7 @@ tracked_committee_ids <- contributions %>%
 qualifying_recipient_pacs <- contributions %>%
   filter(
     !is.na(std_contributor_id),
-    std_contributor_id %in% traversed_ids,
+    std_contributor_id %in% traversed_ids, # looking at all traversed ids, not all will be qualifying
     Recipient.Committee.ID %in% c(traversed_ids, tracked_committee_ids)
   ) %>%
   group_by(std_contributor_id, Recipient.Committee.ID) %>%
@@ -376,6 +473,25 @@ no_id_for_review <- contributions %>%
 
 ```
 
+```{r}
+no_id_for_review
+```
+Planned Parenthood Action Fund of the Pacific Southwest PAC
+Planned Parenthood of Orange and San Bernardino Counties' Community Action Fund
+PROGRESSIVE ERA PAC
+SERVICE EMPLOYEES INTERNATIONAL UNION LOCAL 1021 CANDIDATE PAC
+Committee of Interns and Residents SEIU Local 1957 Health Care Advocacy Fund
+
+
+D.R.I.V.E. - Dem, Rep, Ind Voter Ed (The PAC of the Int'l Brhd of Teamsters)	1045835	
+International Union of Painters & Allied Trades Legislative Educational Committee (MPO)
+
+
+```{r}
+contributions_full %>% filter(Contributor.Name == "California Working Families Party" | Contributor.ID == "1438874")
+```
+
+There are pacs showing up here that aren't showing up in 0103 and im not sure why
 
 # Write output
 
@@ -383,7 +499,7 @@ no_id_for_review <- contributions %>%
 # flag candidate and federal PACs so 0802 can exclude them from
 # relevant_recipient_ids 
 all_candidate_pac_ids <- unique(c(
-  pac_manual_review %>% filter(!is.na(pac_id), is_candidates_pp) %>% pull(pac_id),
+  pac_manual_review %>% filter(!is.na(pac_id), is_candidate) %>% pull(pac_id), # changed from is_candidates_pp
   candidate_pac_ids_by_name
 ))
 
@@ -414,6 +530,17 @@ cat(sprintf(
 
 ```{r}
 #write.csv(pac_universe, "01_outputs/pac_universe.csv", row.names = FALSE)
-write.csv(pac_universe, "01_outputs/pac_universe_new_props.csv", row.names = FALSE)
+#write.csv(pac_universe, "01_outputs/pac_universe_new_props.csv", row.names = FALSE)
+write_csv(pac_universe, "01_outputs/pac_universe_09-26-26.csv")
 cat(sprintf("pac_universe.csv written: %d rows\n", nrow(pac_universe)))
 ```
+
+```{r}
+old <- read.csv("01_outputs/pac_universe_new_props.csv")
+length(unique(old$pac_id))
+length(unique(pac_universe$pac_id))
+```
+
+286 PACs added since last time - that's WAY more than I thought it was going to be.
+
+

@@ -18,38 +18,73 @@ library(here)
 here::i_am("0101_data_pull.R")
 
 
-# pull most recent version of contributors data
-all_chunks <- list()
-next_url <- "https://calmatters-powersearch-2026.fly.dev/powersearch/contributions.json?_size=1000"
+# Set TRUE to skip API pull and reprocess existing raw data without new contributions
+bypass_pull <- TRUE
 
-while (!is.null(next_url)) {
-  resp <- GET(next_url)
-  page <- fromJSON(content(resp, "text", encoding = "UTF-8"), simplifyVector = TRUE)
-  
-  if (is.null(page$rows) || length(page$rows) == 0) break
-  
-  df <- as.data.frame(page$rows, stringsAsFactors = FALSE)
-  names(df) <- page$columns
-  all_chunks <- append(all_chunks, list(df))
-  
-  total <- sum(sapply(all_chunks, nrow))
-  if (total %% 50000 == 0) cat("Rows so far:", total, "\n")
-  
-  next_url <- if (!is.null(page$next_url) && nchar(page$next_url) > 0) page$next_url else NULL
+if (!bypass_pull) {
+  all_chunks <- list()
+  next_url <- "https://calmatters-powersearch-2026.fly.dev/powersearch/contributions.json?_size=1000"
+
+  while (!is.null(next_url)) {
+    resp <- GET(next_url)
+    page <- fromJSON(content(resp, "text", encoding = "UTF-8"), simplifyVector = TRUE)
+
+    if (is.null(page$rows) || length(page$rows) == 0) break
+
+    df <- as.data.frame(page$rows, stringsAsFactors = FALSE)
+    names(df) <- page$columns
+    all_chunks <- append(all_chunks, list(df))
+
+    total <- sum(sapply(all_chunks, nrow))
+    if (total %% 50000 == 0) cat("Rows so far:", total, "\n")
+
+    next_url <- if (!is.null(page$next_url) && nchar(page$next_url) > 0) page$next_url else NULL
+  }
+
+  contributions_full <- bind_rows(all_chunks)
+  cat("Total rows:", nrow(contributions_full), "\n")
+
+  write.csv(contributions_full, "01_inputs/power_search_contributions_raw.csv", row.names = FALSE)
+
+  # Pull IE data
+  url_ie <- "https://calmatters-powersearch-2026.fly.dev/powersearch/ie.csv?_stream=on&_size=max"
+  ie_full <- read.csv(url_ie)
+  write.csv(ie_full, "01_inputs/power_search_ie_raw.csv", row.names = FALSE)
+} else {
+  cat("Bypassing API pull — reading existing raw data\n")
+  contributions_full <- read.csv("01_inputs/contributions-normalized.csv",
+                                 stringsAsFactors = FALSE) %>%
+    rename(
+      `Contributor Name`            = Contributor.Name,
+      `Contributor ID`              = Contributor.ID,
+      `Contributor Employer`        = Contributor.Employer,
+      `Contributor Occupation`      = Contributor.Occupation,
+      `Contributor City`            = Contributor.City,
+      `Contributor Zip Code`        = Contributor.Zip.Code,
+      `Recipient Name`              = Recipient.Name,
+      `Recipient Committee`         = Recipient.Committee,
+      `Recipient Committee ID`      = Recipient.Committee.ID,
+      `Ballot Measure(s)`           = Ballot.Measure.s.,
+      `Ballot Measure Contribution` = Ballot.Measure.Contribution,
+      `Start Date`                  = Start.Date,
+      `Normalized Name`             = Normalized.Name,
+      `Normalized Subname ID`       = Normalized.Subname.ID
+    ) %>%
+    # mark strings as CE_UTF8 so make_row_hash produces the same hashes as the
+    # API pull path (where JSON parsing marks non-ASCII strings as CE_UTF8)
+    mutate(across(where(is.character), enc2utf8))
+  cat("Total rows:", nrow(contributions_full), "\n")
 }
-
-contributions_full <- bind_rows(all_chunks)
-cat("Total rows:", nrow(contributions_full), "\n")
-
-write.csv(contributions_full,"01_inputs/power_search_contributions_raw.csv",row.names = FALSE)
-
-# Pull IE data
-url_ie <- "https://calmatters-powersearch-2026.fly.dev/powersearch/ie.csv?_stream=on&_size=max"
-ie_full <- read.csv(url_ie)
-write.csv(ie_full,"01_inputs/power_search_ie_raw.csv",row.names = FALSE)
 
 
 ### apply processing functions to data
+
+# treat "NA" strings as missing so both paths agree on NA handling
+contributions_full <- contributions_full %>%
+  mutate(
+    `Contributor Employer`   = na_if(`Contributor Employer`,   "NA"),
+    `Contributor Occupation` = na_if(`Contributor Occupation`, "NA")
+  )
 
 contributions_full <- contributions_full %>%
   mutate(

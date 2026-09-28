@@ -83,8 +83,9 @@ below, you must:
    - Companies primarily in oil/gas/petroleum extraction, drilling, refining, or
      distribution -> "21," even if their formal NAICS code would otherwise be
      manufacturing (31/32) or wholesale trade ("80").
-   - Vineyards -> "11" (agriculture/grape-growing), even though winemaking might
-     otherwise suggest Beverage Manufacturing.
+   - Vineyards AND wineries -> "11" (agriculture), even though winemaking might
+     otherwise suggest Beverage Manufacturing -- default any winery to "11" by
+     default, including one that buys/sources grapes rather than growing its own.
    - Integrated health systems that are both an insurer and a hospital/care operator
      (e.g. Kaiser Permanente, Sutter Health) -> "52" (Finance and Insurance), not "60".
    - Tribal casinos and other tribal gaming operations -> "92a" (Native American

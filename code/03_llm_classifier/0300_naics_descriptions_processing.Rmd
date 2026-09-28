@@ -212,9 +212,10 @@ x$description[x$naics_sector == "100"] <- paste0(
 
 x$description[x$naics_sector == "11"] <- paste0(
   x$description[x$naics_sector == "11"],
-  " Includes vineyards, even though winemaking might otherwise suggest Beverage ",
-  "Manufacturing (31) -- classify a vineyard's primary grape-growing/farming ",
-  "operation as agriculture."
+  " Includes vineyards and wineries -- even though winemaking might otherwise ",
+  "suggest Beverage Manufacturing (31), default any vineyard or winery to ",
+  "agriculture (11), including a winery that buys/sources grapes rather than ",
+  "growing its own."
 )
 
 x$description[x$naics_sector == "52"] <- paste0(

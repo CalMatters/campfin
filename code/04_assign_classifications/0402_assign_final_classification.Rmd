@@ -34,18 +34,19 @@ source("resolve_classifications.R")
 # file paths
 
 # Direct contributor LLM — uuid-keyed output from 0902; UUIDs match the current rule file
-DIRECT_LLM_PATH <- "../03_llm_classifier/03_outputs/classification_input_combined_expanded_full_2026-09-13.csv"
+DIRECT_LLM_PATH <- "../03_llm_classifier/03_outputs/classification_input_combined_expanded_full_2026-09-27.csv"
 CLAUDE_PATH <- "../03_llm_classifier/03_outputs/claude_classification_results.csv"
 
-RULE_PATH <- "../01_contributor_pipeline/01_outputs/classified_contributors_09-13-26.csv"
-OS_PATH   <- "../01_contributor_pipeline/01_outputs/combined_contributions_os_matches_09-11-26.csv"
-ML_PATH   <- "../../data/07_output_ml_classification/08_entities_with_ml_2026-08-15.csv"
+RULE_PATH <- "../01_contributor_pipeline/01_outputs/classified_contributors_combined_09-27-26_w_edd.csv"
+OS_PATH   <- "../01_contributor_pipeline/01_outputs/combined_contributions_os_matches_09-27-26.csv"
+#ML_PATH   <- "../../data/07_output_ml_classification/08_entities_with_ml_2026-08-15.csv"
+ML_PATH   <- "../../data/07_output_ml_classification/01_entities_with_ml_09-27-26.csv"
 
-input <- read.csv("../01_contributor_pipeline/01_outputs/classification_input_combined_09-08-26.csv")
+input <- read.csv("../01_contributor_pipeline/01_outputs/classification_input_combined_09-27-26.csv")
 ```
 
 ```{r}
-x <- read.csv("../01_contributor_pipeline/01_outputs/classification_input_combined_09-08-26.csv")
+x <- read.csv("../01_contributor_pipeline/01_outputs/classification_input_combined_09-27-26.csv")
 classified <- read.csv("../01_contributor_pipeline/01_inputs/already_classified_contributions_09-06-26.csv")
 
 label_url <- "https://docs.google.com/spreadsheets/d/11QHvNJsdtMlc1YKo_iNvMB_Jfn5Ui-iYdlWhFYjSm9g/export?format=csv"
@@ -169,8 +170,10 @@ claude_raw <- read_csv(CLAUDE_PATH, col_types = cols(.default = "c")) %>%
 
 claude_expanded <- uuid_search_bridge %>%
   left_join(
-    claude_raw %>% select(search_key_2, claude_code = naics_code_claude,
-                          claude_conf = naics_confidence, claude_reasoning = reasoning),
+    claude_raw %>%
+      select(search_key_2, claude_code = naics_code_claude,
+             claude_conf = naics_confidence, claude_reasoning = reasoning) %>%
+      distinct(search_key_2, .keep_all = TRUE),
     by = "search_key_2"
   ) %>%
   select(-search_key_2)
@@ -180,6 +183,10 @@ cat(sprintf("CLAUDE: %d search_keys -> %d / %d uuid rows covered\n",
 
 
 ```
+```{r}
+claude_raw %>% group_by(search_key_2) %>% filter(n() > 1)
+```
+
 
 Claude classifications were only run on the most recent classifications. 
 
@@ -381,13 +388,15 @@ cat(sprintf("Flagged for review: %d / %d rows\n",
 ```
 
 
+**may need to incorporate zip into alias keys**
+
 ```{r}
 # conflicting aliases: flag rows where the same canonical entity (per normalized_name
 # from 0802's Normalized column) or the same entity_id resolves
 # to different final codes across its variants.
 # groups where every alias was already reviewed and accepted in the previous iteration
 # (matched by name|employer|occupation) are skipped so they don't re-enter the queue
-.reviewed_alias_keys <- read_csv("04_inputs/manual_review_queue_reviewed.csv",
+.reviewed_alias_keys <- read_csv("04_inputs/manual_review_queue_reviewed_09-14-26.csv",
                                   col_types = cols(.default = "c")) %>%
   filter(grepl("alias_conflict", coalesce(manual_review_reason, "")),
          coalesce(manually_confirmed, "") == "TRUE") %>%
@@ -468,6 +477,7 @@ cat(sprintf("Flagged for review: %d / %d rows\n",
 ```
 
 
+
 ```{r, eval = FALSE}
 # data check 
 resolved %>%
@@ -496,10 +506,20 @@ residual cases where someone has that code.
 ```{r}
 resolved <- resolved %>%
   mutate(
-    entity_norm_key = tolower(trimws(coalesce(name, ""))) %>%
-      str_replace_all("[^a-z0-9|]", " ") %>%
-      str_squish()
-  )
+    .name_part = tolower(trimws(coalesce(name, ""))) %>%
+      str_replace_all("[^a-z0-9|]", " ") %>% str_squish(),
+    .emp_part  = tolower(trimws(coalesce(employer, ""))) %>%
+      str_replace_all("[^a-z0-9|]", " ") %>% str_squish(),
+    # For individuals, include employer so subgroup profiles (different people sharing
+    # the same name but different employers) don't get grouped as cross-source conflicts.
+    # For orgs, name alone is the right key since employer is not a disambiguation field.
+    entity_norm_key = if_else(
+      tolower(entity_type) == "individual",
+      paste0(.name_part, "|", .emp_part),
+      .name_part
+    )
+  ) %>%
+  select(-.name_part, -.emp_part)
 
 # 100/100a/100b are the same entity-type family; normalize to "100" before
 # counting distinct codes so those sub-code differences don't trigger a false conflict
@@ -584,6 +604,9 @@ propagated_review
 resolved <- resolved %>% select(-.propagated)
 ```
 
+```{r}
+unique(resolved$rule_tier)
+```
 
 
 ### flag self-employed individuals:
@@ -594,7 +617,7 @@ John wants to review all self-employed individuals.
 # flag self-employed individuals for review: employer field contains "self-employed"
 # (and common variants) or is exactly "self", OR the contributor's own name appears
 # in the employer field. Suppress for contributors already reviewed and confirmed
-.reviewed_confirmed_keys <- read_csv("04_inputs/manual_review_queue_reviewed.csv",
+.reviewed_confirmed_keys <- read_csv("04_inputs/manual_review_queue_reviewed_09-14-26.csv",
                                       col_types = cols(.default = "c")) %>%
   filter(coalesce(manually_confirmed, "") == "TRUE") %>%
   mutate(.key = paste(name, employer, occupation, sep = "|")) %>%
@@ -626,7 +649,43 @@ cat(sprintf("Self-employed flagged: %d rows\n",
 ```
 
 
-### take pre-classified rows out of the review queue: 
+### suppress rows already confirmed in a prior review cycle:
+
+```{r}
+# For non-pre_classified rows that were reviewed and confirmed in a prior cycle,
+# clear manual_review when the current code_final matches what was confirmed.
+# alias_conflict and cross_source_entity_conflict may legitimately recur with new
+# data and are kept; all other reasons (llm_disagrees, claude_gemini_disagree,
+# subsector_needed, self_employed) are suppressed when code hasn't changed.
+.confirmed_lookup <- read_csv("04_inputs/manual_review_queue_reviewed_09-14-26.csv",
+                               col_types = cols(.default = "c")) %>%
+  filter(coalesce(manually_confirmed, "") == "TRUE") %>%
+  mutate(.key = paste(name, employer, occupation, sep = "|"),
+         confirmed_code = na_if(trimws(code_final), "")) %>%
+  select(.key, confirmed_code) %>%
+  distinct(.key, .keep_all = TRUE)
+
+resolved <- resolved %>%
+  mutate(.review_key = paste(name, employer, occupation, sep = "|")) %>%
+  left_join(.confirmed_lookup, by = c(".review_key" = ".key")) %>%
+  mutate(
+    .prev_conf  = !is.na(confirmed_code) & !is.na(code_final) & code_final == confirmed_code,
+    .structural = grepl("alias_conflict|cross_source_entity_conflict",
+                        coalesce(manual_review_reason, "")),
+    manual_review = if_else(.prev_conf & !.structural, FALSE, manual_review),
+    manual_review_reason = if_else(
+      .prev_conf & !.structural & !coalesce(manual_review, FALSE),
+      NA_character_, manual_review_reason
+    )
+  ) %>%
+  select(-.review_key, -.prev_conf, -.structural, -confirmed_code)
+
+cat(sprintf("After confirmed-review suppression — flagged: %d / %d rows\n",
+            sum(coalesce(resolved$manual_review, FALSE)), nrow(resolved)))
+```
+
+
+### take pre-classified rows out of the review queue:
 
 ```{r}
 # pre_classified rows are already human-reviewed and should not be
@@ -641,7 +700,7 @@ resolved <- resolved %>%
   mutate(
     manual_review = if_else(
       coalesce(rule_tier, "") == "pre_classified" &
-        !grepl("alias_conflict|cross_source_entity_conflict|self_employed",
+        !grepl("alias_conflict|cross_source_entity_conflict",
                coalesce(manual_review_reason, ""),
                fixed = FALSE),
       FALSE,
@@ -690,8 +749,8 @@ out_cols <- c(
 )
 out_cols <- out_cols[out_cols %in% names(resolved)]
 
-write_csv(resolved[, out_cols], "04_outputs/final_classifications_before_review_09-13-26.csv")
-write_csv(resolved, "04_outputs/final_classifications_full_before_review_09-13-26.csv")
+write_csv(resolved[, out_cols], "04_outputs/final_classifications_before_review_09-27-26.csv")
+write_csv(resolved, "04_outputs/final_classifications_full_before_review_09-27-26.csv")
 ```
 
 
@@ -734,7 +793,7 @@ sample_cols <- c(
 
 write_csv(
   confidence_sample %>% select(any_of(sample_cols)),
-  "04_outputs/classification_confidence_sample.csv"
+  "04_outputs/classification_confidence_sample_09-27-26.csv"
 )
 ```
 
@@ -775,9 +834,9 @@ rule_raw_annotated <- rule_raw %>%
 review_queue_raw <- bind_rows(
   resolved %>%
     filter(coalesce(manual_review, FALSE)) %>%
-    mutate(.queue_source = "flagged"),
-  confidence_sample %>%
-    mutate(.queue_source = "confidence_sample")
+    mutate(.queue_source = "flagged")#,
+  #confidence_sample %>%
+   # mutate(.queue_source = "confidence_sample")
 ) %>%
   distinct(unit_id, .keep_all = TRUE) %>%
   left_join(
@@ -859,9 +918,47 @@ review_queue_cols <- c(
 ```
 
 ```{r}
+nrow(review_queue)
+```
+
+### look at review queue
+
+```{r}
+categorized <- read_csv("../01_contributor_pipeline/01_inputs/already_classified_contributions_09-13-26.csv")
+```
+
+
+```{r}
+review_queue %>% filter(manual_review_reason == "no rule; llm confidence not high | claude_gemini_disagree")
+```
+
+```{r}
+review_queue %>% filter(manual_review_reason == "llm only source")%>% select(name,employer,occupation,code_final,manual_review_reason)
+```
+
+```{r}
+categorized %>% filter(grepl("AMERICAN PISTACHIO",toupper(Contributor.Name)))
+```
+
+```{r}
+review_queue %>% filter(manual_review_reason == "llm only source")
+review_queue %>% filter(manual_review_reason == "self_employed")
+review_queue %>% filter(manual_review_reason == "subsector_needed: 76/77 requires more specific code")
+```
+
+- 255 rows are flagged b/c llm is the only source
+- why is it NA sometimes? 
+- claude_gemini disagree imply it was already reviewed...
+
+- take confidence sample out of this one. 
+
+### write output
+
+
+```{r}
 write_csv(
   review_queue %>% select(any_of(review_queue_cols)),
-  "04_outputs/manual_review_queue_09-13-26.csv"
+  "04_outputs/manual_review_queue_09-27-26.csv"
 )
 cat(sprintf(
   "Review queue: %d unique entities (from %d raw rows; %d flagged + %d individual_100 + %d confidence sample)\n",
@@ -983,6 +1080,13 @@ write_csv(contributors_3part,  sprintf("04_outputs/contributors_classified_%s.cs
 write_csv(contributors_3part,  "04_outputs/contributors_classified.csv")
 ```
 
+```{r}
+contributors_entity %>% filter(code_final_source != "pre_classified (locked)") 
+```
+
+```{r}
+review_queue %>% filter(manual_review_reason == "subsector_needed: 76/77 requires more specific code")
+```
 
 
 
@@ -992,6 +1096,11 @@ Run this section after completing `04_inputs/manual_review_queue_reviewed.csv`.
 It can be run standalone (without re-running the full notebook) — the first chunk
 reloads any objects not already in memory.
 
+
+**update files here if needed**
+
+
+
 ```{r}
 library(dplyr)
 library(readr)
@@ -1000,12 +1109,15 @@ library(tidyr)
 
 # reload if running standalone (not available after a fresh R session).
 if (!exists("resolved")) {
-  resolved <- read_csv("04_outputs/final_classifications_full_before_review.csv",
+  #resolved <- read_csv("04_outputs/final_classifications_full_before_review.csv",
+  resolved <- read_csv("04_outputs/final_classifications_full_before_review_09-13-26.csv",
                        col_types = cols(.default = "c")) %>%
     mutate(manual_review = as.logical(manual_review))
 }
 if (!exists("rule_raw")) {
-  rule_raw <- read_csv("../01_contributor_pipeline/01_outputs/classified_contributors_combined.csv",
+  #rule_raw <- read_csv("../01_contributor_pipeline/01_outputs/classified_contributors_combined.csv",
+  #                     col_types = cols(.default = "c"))
+  rule_raw <- read_csv("../01_contributor_pipeline/01_outputs/classification_input_combined_09-08-26.csv",
                        col_types = cols(.default = "c"))
 }
 if (!exists("desc") || !is.data.frame(desc)) {
@@ -1016,7 +1128,7 @@ if (!exists("desc") || !is.data.frame(desc)) {
 ```
 
 ```{r}
-reviewed_raw <- read_csv("04_inputs/manual_review_queue_reviewed.csv",
+reviewed_raw <- read_csv("04_inputs/manual_review_queue_reviewed_09-14-26.csv",
                          col_types = cols(.default = "c"))
 
 reviewed_patched <- reviewed_raw %>%
@@ -1024,17 +1136,35 @@ reviewed_patched <- reviewed_raw %>%
   mutate(
     code_final_reviewed     = na_if(trimws(code_final), ""),
     subsector_reviewed      = na_if(trimws(subsector), ""),
-    subsector_desc_reviewed = na_if(trimws(subsector_description), "")
+    subsector_desc_reviewed = na_if(trimws(subsector_description), ""),
+    dedup_key = case_when(
+      tolower(entity_type) == "organization" ~
+        paste0(
+          trimws(coalesce(name, "")), "|",
+          trimws(coalesce(employer, "")), "|",
+          trimws(coalesce(occupation, ""))
+        ),
+      TRUE ~ paste0(
+        trimws(coalesce(name, "")), "|",
+        trimws(coalesce(employer, "")), "|",
+        trimws(coalesce(occupation, "")), "|",
+        trimws(sub("\\|.*", "", coalesce(zip_codes, "")))
+      )
+    )
   ) %>%
-  select(dedup_key, code_final_reviewed, subsector_reviewed, subsector_desc_reviewed)
+  select(dedup_key, code_final_reviewed, subsector_reviewed, subsector_desc_reviewed,manually_confirmed) %>%
+  distinct(dedup_key, .keep_all = TRUE)
 
 cat(sprintf("Manually confirmed rows to patch: %d\n", nrow(reviewed_patched)))
 ```
 
+
 ```{r}
 # make sure no classification id has more the one code
-reviewed_raw %>% group_by(Contributor.Name,Contributor.Employer,Contributor.Occupation) %>% filter(n_distinct(code_final) > 1)
+reviewed_raw %>% group_by(name,employer,occupation) %>% filter(n_distinct(code_final) > 1)
 ```
+
+
 
 ```{r}
 # re-derive the same dedup_key used when building the review queue, so we can fan
@@ -1087,6 +1217,12 @@ cat(sprintf("Rows patched from review: %d | still flagged: %d / %d (%.1f%%)\n",
             100 * mean(coalesce(resolved_final$manual_review, FALSE))))
 ```
 
+**update still flagged - not correct**
+
+```{r}
+resolved_final$manual
+```
+
 
 ```{r}
 resolved_final %>%
@@ -1094,11 +1230,62 @@ resolved_final %>%
   select(name, employer, occupation, entity_type,
          code_final, code_final_description, code_final_source,
          manual_review_reason,
-         rule_code, llm_code, ml_code) %>%
+         rule_code, llm_code, ml_code,
+         manual_review, manually_confirmed) %>%
   distinct() %>%
   arrange(name)
 ```
 
+```{r}
+nrow(resolved_final)
+```
+
+
+### review incorrect classifications
+
+- do claude and gemini separately
+
+```{r}
+review_input <- read_csv("04_outputs/contributors_classified_entity_09-14-26.csv")
+```
+
+```{r}
+nrow(review_input)
+nrow(reviewed_raw)
+```
+
+```{r}
+reviewed_raw %>% filter(name != review_input$name)
+```
+
+
+```{r}
+# inspect LLM classifications that disagreed
+reviewed_raw %>% filter(llm_code != code_final, code_final != "100") %>% select(name,employer,occupation,code_final,code_final,llm_code,code_final_source) %>% distinct()
+```
+
+- some pre-classified such as kaiser are incorrect.
+- lots of these are when the code was determined to be 100 for individuals
+- real estate investment -> 52 not 40
+- medical response cases need to be fixed... 
+- unitemized member contributions should be union 9think that was updated)
+- don't think code_final_source was updated w/ manual review this time
+
+```{r}
+unique(reviewed_raw$code_final_source)
+```
+
+
+```{r}
+reviewed_raw %>% filter(code_final_source == "pre_classified (locked)") %>% distinct(s)
+```
+
+```{r}
+colnames(reviewed_raw)
+```
+
+
+### write output
 
 ```{r}
 final_out_cols <- c(
@@ -1115,11 +1302,18 @@ final_out_cols <- c(
   "ml_code", "ml_conf", "ml_category", "ml_category_conf"
 )
 final_out_cols <- final_out_cols[final_out_cols %in% names(resolved_final)]
+```
 
-write_csv(resolved_final[, final_out_cols], "04_outputs/final_classifications_08-23-25.csv")
-write_csv(resolved_final, "04_outputs/final_classifications_full_08-23-25.csv")
+
+**update out files to be consistent with input date**
+
+
+```{r}
+write_csv(resolved_final[, final_out_cols], "04_outputs/final_classifications_09-13-26.csv")
+write_csv(resolved_final, "04_outputs/final_classifications_full_09-13-26.csv")
 cat("Wrote final_classifications.csv and final_classifications_full.csv\n")
 ```
+
 
 ```{r}
 # row-level classified output — same schema as already_classified_contributions.csv.
@@ -1142,6 +1336,7 @@ row_level_out_cols <- c(
 )
 
 already_classified_new <- rule_raw %>%
+  mutate(Recipient.Committee.ID = coalesce(Recipient.Committee.ID,parent_pac_id)) %>% 
   left_join(
     resolved_final %>% select(any_of(c(
       unit_id = "unit_id",
@@ -1157,14 +1352,28 @@ already_classified_new <- rule_raw %>%
   ) %>%
   select(any_of(row_level_out_cols))
 
-already_classified_path <- sprintf(
-  "../01_contributor_pipeline/01_inputs/already_classified_contributions_%s.csv",
-  format(Sys.Date(), "%m-%d-%y")
-)
+```
+
+```{r}
+which(is.na(already_classified_new$Recipient.Committee.ID))
+```
+
+
+
+
+```{r}
+#already_classified_path <- sprintf(
+#  "../01_contributor_pipeline/01_inputs/already_classified_contributions_%s.csv",
+#  format(Sys.Date(), "%m-%d-%y")
+#)
+already_classified_path <- "../01_contributor_pipeline/01_inputs/already_classified_contributions_09-13-26.csv"
+
 write_csv(already_classified_new, already_classified_path)
 cat(sprintf("Wrote row-level classified output: %d rows -> %s\n",
             nrow(already_classified_new), already_classified_path))
 ```
+
+
 
 ```{r}
 # one-row-per-entity readable summary — dedup on the same key used in the review queue

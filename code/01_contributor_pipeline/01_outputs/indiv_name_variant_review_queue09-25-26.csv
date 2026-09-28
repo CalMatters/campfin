@@ -1,0 +1,55 @@
+entity_group_id,entity_name,cluster_uuid,canonical_name,entity_status,confirmed,Contributor.Employer,Contributor.Occupation,n_contributions,total_amount,city,state,zip,recipient,max_single_recipient
+igroup_11563,"MARTINEZ, VALERIE",73d8b8fa-0027-4a8a-8fe6-642ff61937a7,NA,new_entity,FALSE,VMA Communications,Business Owner,2,10100,Claremont,CA,91711-1557 | 91711-4623,"BECERRA, XAVIER | Governor",16867
+igroup_11563,"MARTINEZ-BENCOMO, VALERIE",73d8b8fa-0027-4a8a-8fe6-642ff61937a7,NA,new_entity,FALSE,VMA Communications,Business Owner,1,6767,Claremont,CA,91711-1557,"BECERRA, XAVIER | Governor",16867
+igroup_117789,"PRICE (RESTRICTED USE ACCOUNT), JOHNNIE",8f71c20b-7f4f-4565-8bd8-c196570f50bb,JOHNNIE PRICE,adding_to_existing,TRUE,Price Farms,Rancher,1,6200,San Miguel,CA,93451,1021721,16000
+igroup_117789,"PRICE, JOHNNIE",8f71c20b-7f4f-4565-8bd8-c196570f50bb,NA,adding_to_existing,FALSE,Price Farms,Rancher,1,9800,San Miguel,CA,93451,1021721,16000
+igroup_1268,"ADAMS, GREG",21fa34d6-69e4-4bfa-bc32-5fedd551335f,NA,new_entity,FALSE,Kaiser Permanente,Executive,1,20000,Altadena,CA,91001-1416,"BECERRA, XAVIER | Governor",59200
+igroup_1268,"ADAMS, GREGORY",21fa34d6-69e4-4bfa-bc32-5fedd551335f,NA,new_entity,FALSE,Kaiser Permanente,CEO,1,20000,Altadena,CA,91001-2828,"BECERRA, XAVIER | Governor",59200
+igroup_1268,"ADAMS, GREGORY",21fa34d6-69e4-4bfa-bc32-5fedd551335f,NA,new_entity,FALSE,Kaiser Permanente,Executive,1,19200,Altadena,CA,91001-1416,"BECERRA, XAVIER | Governor",59200
+igroup_1270,"LEMKE-VON AMMON, DEREK",05889a59-f405-4483-916f-b38144d48be7,NA,new_entity,FALSE,Not Employed,Retired,1,10000,Oakville,CA,94562,"BECERRA, XAVIER | Governor",13000
+igroup_1270,"LEMKEVONAMMON, DEREK",05889a59-f405-4483-916f-b38144d48be7,NA,new_entity,FALSE,Not Employed,Not Employed,3,3000,Oakville,CA,94562,"BECERRA, XAVIER | Governor",13000
+igroup_1272,"WALKER, MARY",b695a762-8c62-4fea-a021-e7f4d8cf3b88,NA,new_entity,FALSE,Walker Firm,Attorney,1,5000,Palos Verdes Estates,CA,90274-1868,"BECERRA, XAVIER | Governor",17135.04
+igroup_1272,"WALKER, MARY ANN",b695a762-8c62-4fea-a021-e7f4d8cf3b88,NA,new_entity,FALSE,Walker Firm,Executive,2,7135.04,Palos Verdes Estates,CA,90274-1868,"BECERRA, XAVIER | Governor",17135.04
+igroup_1272,"WALKER, MARY ANN",b695a762-8c62-4fea-a021-e7f4d8cf3b88,NA,new_entity,FALSE,"Walker Firm, PC",Executive,1,5000,Palos Verdes Estates,CA,90274-1868,"BECERRA, XAVIER | Governor",17135.04
+igroup_1318,"POWELL-MILLAR, CHRISTINE",db73579c-9961-471c-ac76-bf238f4f8717,NA,adding_to_existing,FALSE,Retired,Retired,4,10000,Folsom,CA,95630,"HILTON, STEVE | Governor",14000
+igroup_1318,"POWELL-MILLER, CHRISTINE",db73579c-9961-471c-ac76-bf238f4f8717,CHRISTINE POWELL-MILLAR,adding_to_existing,TRUE,Retired,Retired,2,4000,Folsom,CA,95630,"HILTON, STEVE | Governor",14000
+igroup_14796,"EMERSON, RITA",0a73b836-8aa8-42b4-913e-076e5d42da92,NA,new_entity,FALSE,Retired,Retired,1,1000,Los Angeles CA,CA,90024,"HILTON, STEVE | Governor",8500
+igroup_14796,"EMERSON, RITA RAE",0a73b836-8aa8-42b4-913e-076e5d42da92,NA,new_entity,FALSE,Retired,Retired,1,7500,Los Angeles,CA,90024,"HILTON, STEVE | Governor",8500
+igroup_16483,"D'ESCOTO, RODRIGO",49ba3a1c-67b5-4c3a-a33b-3aaff36c8713,NA,new_entity,FALSE,Reflection Window and Wall,President,1,10000,Chicago,IL,60647-9350,"BECERRA, XAVIER | Governor",49000
+igroup_16483,"DESCOTO, RODRIGO",49ba3a1c-67b5-4c3a-a33b-3aaff36c8713,NA,new_entity,FALSE,Reflection Window,President,1,39000,Chicago,IL,60647-2000,"BECERRA, XAVIER | Governor",49000
+igroup_18311,"SHIRALIAN, SHAWB",d49123f9-75e7-4009-a0b4-428b142e3ca1,NA,new_entity,FALSE,Shawn Shiralian,Petroleum,2,1066.02,Fresno,CA,93711,"HILTON, STEVE | Governor",39266.02
+igroup_18311,"SHIRALIAN, SHAWN",d49123f9-75e7-4009-a0b4-428b142e3ca1,NA,new_entity,FALSE,Shiralian Enterprises Inc.,Owner,1,38200,Fresno,CA,93711,"HILTON, STEVE | Governor",39266.02
+igroup_20492,"RICHARD, MATTHEW",52eaaed2-9e2a-4491-91fa-3035b4f02380,NA,adding_to_existing,FALSE,Sheet Metal Workers' Local Union No. 104,Building Trades Journeyperson,5,2921.85,Granite Bay,CA,95746,1039318,8697.61
+igroup_20492,"RICHARD, MATTHEW J.",52eaaed2-9e2a-4491-91fa-3035b4f02380,MATTHEW RICHARD,adding_to_existing,TRUE,Sheet Metal Workers' Local Union No. 104,B/T Journey,8,5775.76,Granite Bay | Stockton,CA,95207 | 95746,1039318,8697.61
+igroup_20725,"URBINA, ANTHONY",b040ebee-14ac-452f-9c62-f1c1f1b29b76,NA,adding_to_existing,FALSE,Sheet Metal Workers' Local Union No. 104,B/T Journey,8,6100.29,Pacifica,CA,94044,1039318,9022.14
+igroup_20725,"URBINA, ANTHONY P.",b040ebee-14ac-452f-9c62-f1c1f1b29b76,ANTHONY URBINA,adding_to_existing,TRUE,Sheet Metal Workers' Local Union No. 104,Building Trades Journeyperson,5,2921.85,Pacifica,CA,94044,1039318,9022.14
+igroup_21176,"KING, JUSTIN",8f4b047c-8863-4a44-a2bb-31706fec4b65,NA,new_entity,FALSE,Law Offices of Justin H. King,Attorney,7,4466.66,Rancho Cucamonga,CA,91730,1021273,9433.32
+igroup_21176,"KING, JUSTIN H.",8f4b047c-8863-4a44-a2bb-31706fec4b65,NA,new_entity,FALSE,Law Offices of Justin H. King,Attorney,9,4966.66,Rancho Cucamonga,CA,91730,1021273,9433.32
+igroup_33877,"KESTER (RESTRICTED USE ACCOUNT), KEVIN",6e1ef32b-ba2e-48c5-9798-9503896f6940,KEVIN KESTER,adding_to_existing,TRUE,Kester Ranch,Rancher,1,1700,Parkfield,CA,93451,1021721,11500
+igroup_33877,"KESTER, KEVIN",6e1ef32b-ba2e-48c5-9798-9503896f6940,NA,adding_to_existing,FALSE,Kester Ranch,Rancher,3,9800,Parkfield,CA,93451,1021721,11500
+igroup_42113,"KAMIN, MITCH",10b9a2a4-66fd-4c97-a311-f54bb1244523,NA,new_entity,FALSE,Not Employed,Not Employed,1,2500,Los Angeles,CA,90004-1047,1479464,5000
+igroup_42113,"KAMIN, MITCHELL",10b9a2a4-66fd-4c97-a311-f54bb1244523,NA,new_entity,FALSE,Not Employed,Not Employed,1,2500,Los Angeles,CA,90004-1047,1479464,5000
+igroup_445,"ROE, RICHARD",f5f8fa8c-8a32-43ac-b0e0-457792fd9dd6,NA,new_entity,FALSE,Retired,Retired,1,5000,Sherman Oaks,CA,91423,"HILTON, STEVE | Governor",6570
+igroup_445,"ROE, RICHARD THORNEY WILLIAM",f5f8fa8c-8a32-43ac-b0e0-457792fd9dd6,NA,new_entity,FALSE,Retired,Retired,3,1570,Sherman Oaks,CA,91423,"HILTON, STEVE | Governor",6570
+igroup_5708,"CHAOTE, ARTHUR",5d7211b9-1a89-4ed1-8733-847ffc20a497,ARTHUR CHOATE,adding_to_existing,TRUE,Retired,Retired,1,1000,Coral Gables,FL,33146,"HILTON, STEVE | Governor",6000
+igroup_5708,"CHOATE, ARTHUR",5d7211b9-1a89-4ed1-8733-847ffc20a497,NA,adding_to_existing,FALSE,Retired,Retired,1,1000,Coral Gables,FL,33146,"HILTON, STEVE | Governor",6000
+igroup_5708,"CHOATE, ARTHUR",1070cb19-32c5-4357-b0e7-09791cb2b35c,NA,adding_to_existing,FALSE,Self Employed - Arthur Choate,Investor,2,4000,Coral Gables,FL,33146,"HILTON, STEVE | Governor",6000
+igroup_572,"KIM, DONG",eb4bb602-fe33-4d08-8a48-c6c2aaa447a5,NA,new_entity,FALSE,Starlight Industries LLC,CEO,1,10000,Palos Verdes Estates,CA,90274,"HILTON, STEVE | Governor",46000
+igroup_572,"KIM, DONG",eb4bb602-fe33-4d08-8a48-c6c2aaa447a5,NA,new_entity,FALSE,Starlight Industries LLC,Chief Executive Officer,1,5000,Palos Verdes Estates,CA,90274,"HILTON, STEVE | Governor",46000
+igroup_572,"KIM, DONG",eb4bb602-fe33-4d08-8a48-c6c2aaa447a5,NA,new_entity,FALSE,Starlight Industries LLC,President,3,16000,Palos Verdes Estates,CA,90274,"HILTON, STEVE | Governor",46000
+igroup_572,"KIM, DONG KOO",eb4bb602-fe33-4d08-8a48-c6c2aaa447a5,NA,new_entity,FALSE,Starlight Industries LLC,CEO,2,15000,Palos Verdes Estates,CA,90274,"HILTON, STEVE | Governor",46000
+igroup_59886,"BLAIR, PHILIP C.",c03e5c20-2c82-41ce-ae7a-86861c517691,NA,new_entity,FALSE,Manpower of San Diego Franchise,Executive Officer,1,9000,Del Mar,CA,92014,1280724,14000
+igroup_59886,"BLAIR, PHILLIP C.",c03e5c20-2c82-41ce-ae7a-86861c517691,NA,new_entity,FALSE,Manpower of San Diego Franchise,Executive Officer,1,5000,Del Mar,CA,92014,1280724,14000
+igroup_6331,"VANSAUN, JR., WALTER",675cb396-ebdb-49d3-ad0e-d1450759eba6,NA,new_entity,FALSE,Retired,Retired,4,1400,Seal Beach,CA,90740,"HILTON, STEVE | Governor",5900
+igroup_6331,"VANSAUN, WALTER",675cb396-ebdb-49d3-ad0e-d1450759eba6,NA,new_entity,FALSE,Retired,Retired,1,4500,Seal Beach,CA,90740,"HILTON, STEVE | Governor",5900
+igroup_7378,"NAREZ, DR. MERCEDES",ff1fb518-adc4-44c8-b423-8d2d1bc8f822,NA,new_entity,FALSE,Kaiser,Physician,2,350,Los Angeles,CA,90068-1312,"BECERRA, XAVIER | Governor",5925
+igroup_7378,"NAREZ, DR. MERCEDES",ff1fb518-adc4-44c8-b423-8d2d1bc8f822,NA,new_entity,FALSE,Kaiser Permanente,Physician,4,550,Los Angeles,CA,90068-1312,"BECERRA, XAVIER | Governor",5925
+igroup_7378,"NAREZ, MERCEDES",ff1fb518-adc4-44c8-b423-8d2d1bc8f822,NA,new_entity,FALSE,Kaiser,Physician,1,25,Los Angeles,CA,90068-1312,"BECERRA, XAVIER | Governor",5925
+igroup_7378,"NAREZ, MERCEDES",19057321-a485-4b16-8873-a3cfdd615b65,NA,new_entity,FALSE,Not Employed,Not Employed,1,5000,Los Angeles,CA,90068-1312,"BECERRA, XAVIER | Governor",5925
+igroup_7556,"BEQUER, LEYDA",655afed8-12b5-4681-ac87-a5ac460dde1c,NA,adding_to_existing,FALSE,Retired,Retired,2,7000,Yorba Linda,CA,92887,"HILTON, STEVE | Governor",8041.02
+igroup_7556,"BEQUER, LEYDS",655afed8-12b5-4681-ac87-a5ac460dde1c,LEYDA BEQUER,adding_to_existing,TRUE,Retired,Retired,1,1041.02,Yorba Linda,CA,92887,"HILTON, STEVE | Governor",8041.02
+igroup_79966,"LAROSE, DAVID",868d0e61-24a4-495f-b25c-8ea943aa1a35,NA,new_entity,FALSE,Carnegie Robotics,Chief Scientist,2,4000,Minneapolis,MN,55405-2116,1380675,6100
+igroup_79966,"LAROSE, DAVID",3ce84049-07f1-4bbf-98a7-c4710184897e,NA,new_entity,FALSE,Not Employed,Not Employed,1,100,Boerne,TX,78006-5602,1380675,6100
+igroup_79966,"LAROSEE, DAVID",868d0e61-24a4-495f-b25c-8ea943aa1a35,NA,new_entity,FALSE,Carnegie Robotics LLC,Chief Scientist,1,2000,Minneapolis,MN,55405-2116,1380675,6100
+igroup_858,"LANSING, LAINE",4483e5c6-2f8b-4885-a5a4-7f06f79b0677,NA,adding_to_existing,FALSE,Lansing Companies,Real Estate,2,10000,Solana Beach,CA,92075,"HILTON, STEVE | Governor",34500
+igroup_858,"LANSING, LAINEY",4483e5c6-2f8b-4885-a5a4-7f06f79b0677,LAINE LANSING,adding_to_existing,TRUE,Lansing Companies,Real Estate,5,24500,Solana Beach,CA,92075,"HILTON, STEVE | Governor",34500

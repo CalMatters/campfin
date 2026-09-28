@@ -66,7 +66,7 @@ _TODAY = date.today().strftime("%m-%d-%y")
 DEFAULT_OUT = OUTPUTS_DIR / f"classified_contributors_{_TODAY}.csv"
 
 # UPDATE this when necessary
-DEFAULT_PRE_CLASSIFIED = INPUTS_DIR / "already_classified_contributions_09-06-26.csv"
+DEFAULT_PRE_CLASSIFIED = INPUTS_DIR / "already_classified_contributions_09-13-26.csv"
 
 _KEYWORD_SHEET_ID = "1WN3KQt9S3Xn5mT2kZxinQ5OYhgCmldA-Q8d5VDXoEg0"
 KEYWORD_SHEET_URLS = {
@@ -366,7 +366,7 @@ def match_pre_classified(
     df: pd.DataFrame, pre_classified_path: Path
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    (Temporary?) direct match against already_classified_contributions.csv.
+    direct match against already_classified_contributions.csv.
     Runs first.
 
     Matching:
@@ -430,14 +430,6 @@ def match_pre_classified(
         pre_df          = pre_df.drop(columns=col, errors="ignore")
         unclassified_df = unclassified_df.drop(columns=col, errors="ignore")
 
-    # Megadonors → 100a, Major Donors → 100b
-    if "revised_category" in pre_df.columns:
-        rev = pre_df["revised_category"].fillna("").str.strip()
-        pre_df.loc[rev == "Megadonors",   "code_final"]             = "100a"
-        pre_df.loc[rev == "Megadonors",   "code_final_description"] = "Megadonors"
-        pre_df.loc[rev == "Major Donors", "code_final"]             = "100b"
-        pre_df.loc[rev == "Major Donors", "code_final_description"] = "Major Donors"
-
     pre_df["naics_code"]      = pre_df["code_final"]
     pre_df["naics_label"]     = pre_df["code_final_description"]
     pre_df["level1_category"] = pd.NA
@@ -477,9 +469,11 @@ def _build_employer_lookup(pre_classified_path: Path) -> pd.DataFrame:
     pre_cols = ["code_final", "code_final_description", "code_final_source"]
     # "UNKNOWN" catches values like "N/A"/"BLANK" after standardization
     emp_usable = ~pre["_pre_emp"].isin(NON_COMPANY_EMPLOYER_NORM | {"UNKNOWN"}) & (pre["_pre_emp"] != "")
+    # exclude code-100 rows
+    not_retired = ~pre["code_final"].str.startswith("100", na=False)
     return pd.concat([
-        pre[["_pre_name"] + pre_cols].rename(columns={"_pre_name": "_emp_key"}),
-        pre.loc[emp_usable, ["_pre_emp"] + pre_cols].rename(columns={"_pre_emp": "_emp_key"}),
+        pre.loc[not_retired, ["_pre_name"] + pre_cols].rename(columns={"_pre_name": "_emp_key"}),
+        pre.loc[emp_usable & not_retired, ["_pre_emp"] + pre_cols].rename(columns={"_pre_emp": "_emp_key"}),
     ]).drop_duplicates(subset="_emp_key", keep="first")
 
 
@@ -672,8 +666,8 @@ def match_edd(
 
     client = EDDClient(delay=delay, cache_path=EDD_CACHE_PATH)
     edd_results: dict[str, object] = {}
-    for i, row in enumerate(to_query.itertuples(), 1):
-        q = str(row._edd_query)
+    for i, q in enumerate(to_query["_edd_query"].tolist(), 1):
+        q = str(q)
         r = client.lookup(q)
         edd_results[q] = r
         print(
@@ -1023,6 +1017,7 @@ def main(argv: list[str] | None = None) -> None:
     partition_schema = None
     if not args.no_naics_crosswalk:
         old_to_new_map = load_old_to_new_map()
+        old_to_new_map.update({"100a": "100", "100b": "100"})
         naics_crosswalk = build_naics_crosswalk(old_to_new_map=old_to_new_map)
         label_map = load_sector_labels()
         raw_labels = pd.read_csv(args.custom_naics_labels, dtype=str)

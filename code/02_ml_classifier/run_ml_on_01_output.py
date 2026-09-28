@@ -43,9 +43,9 @@ import keyword_priors as kp
 CODE_ROOT  = _HERE.parent
 DATA_ROOT  = CODE_ROOT.parent / "data"
 
-DEFAULT_INPUT     = CODE_ROOT / "01_contributor_pipeline" / "01_outputs" / "classification_input_combined.csv"
+DEFAULT_INPUT     = CODE_ROOT / "01_contributor_pipeline" / "01_outputs" / "classification_input_combined_09-27-26.csv"
 DEFAULT_MODEL_DIR = DATA_ROOT / "07_output_ml_classification" / "models"
-DEFAULT_OUT       = DATA_ROOT / "07_output_ml_classification" / "01_entities_with_ml.csv"
+DEFAULT_OUT       = DATA_ROOT / "07_output_ml_classification" / "01_entities_with_ml_09-27-26.csv"
 
 # ---------------------------------------------------------------------------
 # Code translation: keyword prior old-scheme -> new custom sector scheme
