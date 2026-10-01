@@ -54,17 +54,28 @@ env/
 **/.claude/
 
 # ── Pipeline output directories — only large files (>5MB) gitignored ─────────
-# 01_outputs
+# 01_outputs and 01_inputs
 code/01_contributor_pipeline/01_inputs/contributions-normalized.csv
 code/01_contributor_pipeline/01_outputs/indiv_pairs_tmp.csv
 code/01_contributor_pipeline/01_outputs/combined_contributions_os_matches_09-11-26.csv
 code/01_contributor_pipeline/01_outputs/classified_contributors_09-13-26.csv
 code/01_contributor_pipeline/01_outputs/classification_input_combined_09-08-26.csv
+code/01_contributor_pipeline/01_inputs/already_classified_contributions_09-13-26.csv
+code/01_contributor_pipeline/01_outputs/classification_input_09-27-26.csv
+code/01_contributor_pipeline/01_outputs/classification_input_combined_09-28-26.csv
+code/01_contributor_pipeline/01_outputs/classified_contributors_combined_09-28-26.csv
+code/01_contributor_pipeline/01_outputs/classified_contributors_last_iteration.csv
 code/01_contributor_pipeline/01_outputs/race_contributions_processed.csv
 code/01_contributor_pipeline/01_outputs/pac_classification_input_09-08-26.csv
 code/01_contributor_pipeline/01_outputs/pac_classification_input_09-27-26.csv
 code/01_contributor_pipeline/01_outputs/pac_contributions_os_matches.csv
 code/01_contributor_pipeline/01_outputs/pac_contributions_os_matches_09-27-26.csv
+code/01_contributor_pipeline/01_outputs/over_5k_tagged_09-28-26.csv
+code/01_contributor_pipeline/01_outputs/pac_classifiability_09-28-26.csv
+code/01_contributor_pipeline/01_outputs/pac_classification_input_09-28-26.csv
+code/01_contributor_pipeline/01_outputs/pac_review_queue_09-28-26.csv
+code/01_contributor_pipeline/01_outputs/pac_stuck_pacs_09-28-26.csv
+code/01_contributor_pipeline/01_outputs/pac_traversal_order_09-28-26.csv
 code/01_contributor_pipeline/01_outputs/pac_classified_contributors.csv
 code/01_contributor_pipeline/01_outputs/pac_classification_input.csv
 code/01_contributor_pipeline/01_outputs/individuals_name_parsed_all_contributors.csv
@@ -78,9 +89,21 @@ code/03_llm_classifier/03_outputs/classification_input_combined_expanded_full_20
 code/03_llm_classifier/03_outputs/classification_input_combined_august_updated_full_2026-09-13.csv
 code/03_llm_classifier/03_outputs/classification_inpute_combined_full_2026-08-16.csv
 code/03_llm_classifier/03_outputs/pac_classification_batch1_full_expanded_pac_2026-08-13.csv
+code/03_llm_classifier/03_outputs/classification_input_combined_expanded_full_2026-09-28.csv
+code/03_llm_classifier/03_outputs/classification_input_combined_full_2026-09-28.csv
+code/03_llm_classifier/03_outputs/classification_input_pac_patch_full_2026-09-28.csv
+code/03_llm_classifier/03_outputs/web_search_patch_pac_contribs_2026-09-28.csv
 # 04_outputs
 code/code/04_assign_classifications/04_outputs/archive # ignore everything in archive
 code/code/04_assign_classifications/04_inputs/archive
+code/04_assign_classifications/04_inputs/All contributors review queue - Classified contributors w_ review rows flagged.csv
+code/04_assign_classifications/04_inputs/archive/pac_manual_review_reconciled_09-24-26.csv
+code/04_assign_classifications/04_inputs/pac_manual_review_reconciled.csv
+code/04_assign_classifications/04_outputs/contributors_classified.csv
+code/04_assign_classifications/04_outputs/final_classifications_before_review_09-28-26.csv
+code/04_assign_classifications/04_outputs/final_classifications_full_before_review_09-28-26.csv
+code/04_assign_classifications/04_outputs/manual_review_queue_09-28-26.csv
+code/04_assign_classifications/04_outputs/pac_contrib_patch.csv
 code/04_assign_classifications/04_outputs/final_classifications_before_review_09-27-26.csv
 code/04_assign_classifications/04_outputs/final_classifications_full_before_review_09-27-26.csv
 code/04_assign_classifications/04_outputs/final_classifications_full_before_review_09-13-26.csv

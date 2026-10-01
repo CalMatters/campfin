@@ -960,6 +960,71 @@ def apply_identity_overrides(df: pd.DataFrame, schema: pd.DataFrame) -> pd.DataF
     return df
 
 
+# part 5: candidate self-contribution flag ----------------------------------------
+
+# committee_ids: Recipient.Committee.ID values for each candidate's committee(s) - Ben Allen has two.
+CANDIDATE_SELF_CONTRIB = [
+    {
+        "candidate":     "Steve Hilton",
+        "name_pats":     [r"HILTON,?\s*STE(VE|VEN|PHEN)\b", r"STEVE\s+HILTON\s+SHOW"],
+        "committee_ids": {"1480425"},
+    },
+    {
+        "candidate":     "Xavier Becerra",
+        "name_pats":     [r"BECERRA,?\s*XAVIER\b"],
+        "committee_ids": {"1480025"},
+    },
+    {
+        "candidate":     "Jane Kim",
+        "name_pats":     [r"KIM,?\s*JANE\b"],
+        "committee_ids": {"1485530"},
+    },
+    {
+        "candidate":     "Ben Allen",
+        "name_pats":     [r"ALLEN,?\s*BEN(JAMIN)?\b"],
+        "committee_ids": {"1460970", "1483889"},
+    },
+]
+
+
+def flag_self_contributions(df: pd.DataFrame) -> pd.DataFrame:
+    """Classify self-funding contributions.
+
+    Check whether contributors to any of these candidate committees share the name of the
+    candidate.
+
+    All self-contributions will be routed to manual review just in case. 
+    """
+    print()
+    print("=" * 70)
+    print("PART 5 — Self-funding")
+    print("=" * 70)
+
+    df = df.copy()
+    std_name  = df["standardized_name"].fillna("").str.strip().str.upper()
+    committee = df["Recipient.Committee.ID"].fillna("").astype(str).str.strip()
+
+    n_total = 0
+    for cand in CANDIDATE_SELF_CONTRIB:
+        recip_mask = committee.isin(cand["committee_ids"])
+        name_mask  = pd.Series(False, index=df.index)
+        for pat in cand["name_pats"]:
+            name_mask |= std_name.str.contains(pat, regex=True, na=False)
+
+        hit = name_mask & recip_mask
+        n = int(hit.sum())
+        if n:
+            df.loc[hit, "naics_code"]    = "102"
+            df.loc[hit, "naics_label"]   = "Self-Funding"
+            df.loc[hit, "data_source_1"] = "candidate_self_contrib"
+            df.loc[hit, "data_source_2"] = f"candidate:{cand['candidate']}"
+        n_total += n
+        print(f"  {cand['candidate']:25s}: {n:>3,} row(s)")
+
+    print(f"  Total: {n_total:,} candidate self-contribution row(s) flagged")
+    return df
+
+
 # summary --------------------------------------------------------------------------------
 
 def print_summary(df: pd.DataFrame) -> None:
@@ -1050,6 +1115,8 @@ def main(argv: list[str] | None = None) -> None:
     if not args.no_identity_overrides:
         identity_schema = load_identity_overrides(args.custom_naics_labels, old_to_new_map)
         df = apply_identity_overrides(df, identity_schema)
+
+    df = flag_self_contributions(df)
 
     # label unitemized contributions
     unitemized_mask = df["Contributor.Name"].fillna("").str.strip().str.lower() == "unitemized contributions"

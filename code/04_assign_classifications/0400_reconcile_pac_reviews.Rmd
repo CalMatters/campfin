@@ -34,7 +34,10 @@ supplemental_review_paths
 ```
 
 
+
 ### combine pac review into one dataframe
+
+Major donors are flagged via `industry_override_under_5k = "Major Donors/Megadonors"` OR "major donor" in notes; they remain in pac_review with `is_major_donor = TRUE` so 0103 can suppress them from future review queues.
 
 ```{r}
 # union subcategory labels that map to the broader "Unions" override in newer reviews.
@@ -55,14 +58,23 @@ for (src in unique(supplemental_reviews$review_source)) {
   supp <- supplemental_reviews %>% filter(review_source == src)
   cat(sprintf("\n=== Merging: %s ===\n", src))
 
-  # 1. flag major donors
+  # 1. flag major donors (by notes OR by override)
   major_donor_rows <- supp %>%
-    filter(grepl("major donor", notes, ignore.case = TRUE))
+    filter(
+      grepl("major donor", notes, ignore.case = TRUE) |
+      trimws(coalesce(industry_override_under_5k, "")) == "Major Donors/Megadonors"
+    )
   all_major_donors[[src]] <- major_donor_rows %>%
     mutate(review_source = src) %>%
-    select(review_source, pac_id, Contributor.Name, notes)
+    select(review_source, pac_id, Contributor.Name, industry_override_under_5k, notes)
+  # notes-based major donors: standardize override to "Major Donors/Megadonors" so they're
+  # consistently identifiable; include all rows in supp_clean so they enter pac_review
   supp_clean <- supp %>%
-    filter(!grepl("major donor", notes, ignore.case = TRUE))
+    mutate(industry_override_under_5k = if_else(
+      grepl("major donor", notes, ignore.case = TRUE),
+      "Major Donors/Megadonors",
+      industry_override_under_5k
+    ))
 
   # 2. pendings pacs
   new_pending <- supp_clean %>%
@@ -267,6 +279,16 @@ cat(sprintf("\nFinal pac_review: %d rows, %d with no pac_id (name-matched)\n",
             sum(is.na(pac_review$pac_id) | pac_review$pac_id == "")))
 ```
 
+```{r}
+pac_review %>% filter(pac_id == "1370549")
+```
+
+```{r}
+pac_review %>% filter(Contributor.Name == "Service Employees International Union Committee of Interns and Resident Physicians")
+```
+
+also look for industry_override is major/mega donor...
+
 ### post-merge: fix federal flags and propagate overrides by fec_id
 
 ```{r}
@@ -356,6 +378,9 @@ cat(sprintf(
 ))
 ```
 
+```{r}
+contributions %>% filter(Recipient.Name == "ALLEN, BEN", Office == "Insurance Commissioner") %>% select(Recipient.Committee,Recipient.Committee.ID)
+```
 
 
 ### deduplicate pac_review to one row per pac_id
@@ -499,6 +524,19 @@ pac_review %>% filter(pac_id %in% fed_ids) %>% distinct(is_federal_pac)
 #pac_review %>% filter(!is.na(pac_id)) %>% group_by(pac_id) %>% filter(n_distinct(industry_override_under_5k) > 1)
 pac_review %>% filter(!is.na(fec_id)) %>% group_by(fec_id) %>% filter(n_distinct(industry_override_under_5k) > 1)
 #pac_review %>% filter(!is.na(pac_id)) %>% group_by(pac_id) %>% filter(n_distinct(fec_id) > 1 | n_distinct(is_federal_pac) > 1) %>% arrange(pac_id)
+```
+
+# Flag major donors
+
+```{r}
+pac_review <- pac_review %>%
+  mutate(is_major_donor =
+    trimws(coalesce(industry_override_under_5k, "")) == "Major Donors/Megadonors" |
+    grepl("major donor", coalesce(notes, ""), ignore.case = TRUE)
+  )
+
+cat(sprintf("pac_review: %d row(s), %d flagged as major donor\n",
+            nrow(pac_review), sum(pac_review$is_major_donor, na.rm = TRUE)))
 ```
 
 # Write output

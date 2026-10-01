@@ -797,71 +797,6 @@ contributions_full %>% filter(Contributor.Name == "Blue Diamond Growers")
 ### Add uuids to new contribution records
 
 ```{r}
-new <- classification_test[which(is.na(classification_test$uuid)),]
-nrow(new)
-```
-
-```{r}
-new %>% select(Contributor.Name,Contributor.Employer,Contributor.Occupation) %>% distinct()
-```
-Contributor.Name, Contributor.ID, as.numeric(Amount),
-      as.character(Recipient.Committee.ID),
-      Contributor.City, normalize_missing(Contributor.Employer),
-      normalize_missing(Contributor.Occupation), pad_zip(Contributor.Zip.Code),
-      Start.Date
-      
-      
-```{r}
-new %>% filter(toupper(Contributor.Name) %in% toupper(categorized$Contributor.Name))
-```
-
-```{r}
-classification_test %>% filter(legacy_match_id == "1db587bd")
-categorized %>% filter(legacy_match_id == "1db587bd")
-```
-
-```{r}
-new %>% filter(!is.na(Contributor.ID) & !(new$Contributor.ID %in% categorized$Contributor.ID)) %>% distinct(Contributor.ID)
-```
-
-```{r}
-categorized %>% filter(grepl("CALIFORNIA CARPENTER",toupper(Contributor.Name)))
-```
-
-```{r}
-new %>% filter(legacy_match_id %in% categorized$legacy_match_id)
-```
-
-```{r}
-new %>% filter(Contributor.Name == "KTGY Group, Inc.") %>% select(Contributor.Name, Contributor.ID, Amount,
-      Recipient.Committee.ID,
-      Contributor.City, Contributor.Employer,
-      Contributor.Occupation, Contributor.Zip.Code,
-      Start.Date, legacy_match_id,uuid) 
-```
-
-```{r}
-categorized %>% filter(Contributor.Name == "KTGY Group, Inc.")%>% select(Contributor.Name, Contributor.ID, Amount,
-      Recipient.Committee.ID,
-      Contributor.City, Contributor.Employer,
-      Contributor.Occupation, Contributor.Zip.Code,
-      Start.Date, legacy_match_id,uuid)
-```
-
-```{r}
-categorized %>% filter(is.na(Recipient.Committee.ID))
-```
-
-
-```{r}
-categorized %>% filter(grepl("PACIFIC COAST",toupper(Contributor.Name)))
-```
-
-
-### make sure to run this
-
-
-```{r}
 # add remaining uuids
 classification_input[which(is.na(classification_input$uuid)),]$uuid <-
   uuid::UUIDgenerate(n = nrow(classification_input[which(is.na(classification_input$uuid)),]))
@@ -907,26 +842,6 @@ classification_input <- classification_input %>%
 classification_input %>% filter(!is.na(effective_Contributor.ID) & is.na(FILER_ID)) %>% select(Contributor.Name,effective_Contributor.ID)
 ```
 
-
-#### remove this chunk 
-
-```{r, eval = FALSE}
-# data to map contributor ids
-id_map_full <- read_tsv("01_inputs/FILERNAME_CD.tsv")
-id_map <- unique(id_map_full[,c("XREF_FILER_ID","FILER_ID","FILER_TYPE")]) # get unique xref id / filer ids combos
-
-# convert all ids to character strings
-id_map$FILER_ID  <- as.character(id_map$FILER_ID)
-id_map$XREF_FILER_ID <- as.character(id_map$XREF_FILER_ID)
-classification_input$Contributor.ID  <- as.character(classification_input$Contributor.ID)
-classification_input$effective_Contributor.ID <- as.character(classification_input$effective_Contributor.ID)
-
-# map filer id to contributor id using effective_Contributor.ID (includes sheet corrections)
-classification_input <- left_join(classification_input, id_map, by = c("effective_Contributor.ID" = "XREF_FILER_ID"))
-
-# check that each has a corresponding filer id
-classification_input %>% filter(is.na(FILER_ID) & !is.na(effective_Contributor.ID)) %>% select(Contributor.Name,Contributor.ID,FILER_ID)
-```
 
 ### resume 
 
@@ -1018,47 +933,24 @@ pacs %>% filter(is.na(effective_Contributor.ID)) %>% select(Contributor.Name,Rec
 pacs[which(pacs$Contributor.Name == "Movement Voter PAC Begining Balances as of Registarion"),]$is_fed_pac <- TRUE
 ```
 
-
 ```{r}
 contributions %>% filter(Contributor.Name == 'Movement Voter PAC Begining Balances as of Registarion')
 ```
 MOVEMENT VOTER PAC (FEC PAC ID C00728360) SUPPORTING PROP 4
 - this needs to NOT be classified!!!
 
-```{r}
-contributions_full %>% filter(Recipient.Committee.ID == "1497099")
-```
 
-
-
-```{r}
-contributions_full %>% filter(Contributor.Name == "International Association of Sheet Metal, Air, Rail and Transportation Workers Political Action League")
-```
-```{r}
-contributions_full %>% filter(Contributor.ID == "1414164")
-```
-
-
-```{r}
-contributions_full %>% filter(grepl("AMERICAN FEDERATION OF STATE",toupper(Contributor.Name))& Recipient.Committee.ID == "1483562") # & Recipient.Committee.ID == "1480025"
-contributions_full %>% filter(Contributor.ID == "1254555" & Recipient.Committee.ID == "1483562")
-```
-
-
+### write output
 	
 ```{r}
 today <- format(Sys.Date(), "%m-%d-%y")
 write.csv(direct, paste0("01_outputs/classification_input_", today, ".csv"), row.names = FALSE)
 write.csv(pacs,   paste0("01_outputs/pac_input_", today, ".csv"),            row.names = FALSE)
+write_csv(
+  indiv_with_entity_id %>% distinct(contribution_id, entity_uuid),
+  paste0("01_outputs/indiv_entity_lookup_", today, ".csv")
+)
 ```
-
-```{r}
-nrow(pacs)
-pacs2 <- read.csv("01_outputs/pac_input_09-25-26.csv")
-nrow(pacs2)
-```
-
-
 
 ### data check: entity groups with mixed federal PAC status
 

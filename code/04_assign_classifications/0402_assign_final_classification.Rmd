@@ -34,20 +34,20 @@ source("resolve_classifications.R")
 # file paths
 
 # Direct contributor LLM — uuid-keyed output from 0902; UUIDs match the current rule file
-DIRECT_LLM_PATH <- "../03_llm_classifier/03_outputs/classification_input_combined_expanded_full_2026-09-27.csv"
+DIRECT_LLM_PATH <- "../03_llm_classifier/03_outputs/classification_input_combined_expanded_full_2026-09-28.csv"
 CLAUDE_PATH <- "../03_llm_classifier/03_outputs/claude_classification_results.csv"
 
-RULE_PATH <- "../01_contributor_pipeline/01_outputs/classified_contributors_combined_09-27-26_w_edd.csv"
+RULE_PATH <- "../01_contributor_pipeline/01_outputs/classified_contributors_combined_09-28-26.csv"
 OS_PATH   <- "../01_contributor_pipeline/01_outputs/combined_contributions_os_matches_09-27-26.csv"
 #ML_PATH   <- "../../data/07_output_ml_classification/08_entities_with_ml_2026-08-15.csv"
 ML_PATH   <- "../../data/07_output_ml_classification/01_entities_with_ml_09-27-26.csv"
 
-input <- read.csv("../01_contributor_pipeline/01_outputs/classification_input_combined_09-27-26.csv")
+input <- read.csv("../01_contributor_pipeline/01_outputs/classification_input_combined_09-28-26.csv")
 ```
 
 ```{r}
-x <- read.csv("../01_contributor_pipeline/01_outputs/classification_input_combined_09-27-26.csv")
-classified <- read.csv("../01_contributor_pipeline/01_inputs/already_classified_contributions_09-06-26.csv")
+x <- read.csv("../01_contributor_pipeline/01_outputs/classification_input_combined_09-28-26.csv")
+classified <- read.csv("../01_contributor_pipeline/01_inputs/already_classified_contributions_09-13-26.csv")
 
 label_url <- "https://docs.google.com/spreadsheets/d/11QHvNJsdtMlc1YKo_iNvMB_Jfn5Ui-iYdlWhFYjSm9g/export?format=csv"
 labels <- read.csv(label_url)
@@ -369,7 +369,20 @@ resolved <- resolved %>%
   ) %>%
   select(-.claude_gemini_disagree)
 
-# flag associations and unions for subsector review 
+# flag self-funding contributions (code 102) for manual review
+resolved <- resolved %>%
+  mutate(
+    .is_102 = coalesce(code_final, "") == "102",
+    manual_review = if_else(.is_102, TRUE, manual_review),
+    manual_review_reason = case_when(
+      .is_102 & is.na(manual_review_reason) ~ "verify contributor is the candidate",
+      .is_102 ~ paste0(manual_review_reason, " | candidate_self_funding"),
+      TRUE ~ manual_review_reason
+    )
+  ) %>%
+  select(-.is_102)
+
+# flag associations and unions for subsector review
 resolved <- resolved %>%
   mutate(
     .needs_subsector = coalesce(code_final, "") %in% c("76", "77"),
@@ -749,8 +762,8 @@ out_cols <- c(
 )
 out_cols <- out_cols[out_cols %in% names(resolved)]
 
-write_csv(resolved[, out_cols], "04_outputs/final_classifications_before_review_09-27-26.csv")
-write_csv(resolved, "04_outputs/final_classifications_full_before_review_09-27-26.csv")
+write_csv(resolved[, out_cols], "04_outputs/final_classifications_before_review_09-28-26.csv")
+write_csv(resolved, "04_outputs/final_classifications_full_before_review_09-28-26.csv")
 ```
 
 
@@ -923,14 +936,6 @@ nrow(review_queue)
 
 ### look at review queue
 
-```{r}
-categorized <- read_csv("../01_contributor_pipeline/01_inputs/already_classified_contributions_09-13-26.csv")
-```
-
-
-```{r}
-review_queue %>% filter(manual_review_reason == "no rule; llm confidence not high | claude_gemini_disagree")
-```
 
 ```{r}
 review_queue %>% filter(manual_review_reason == "llm only source")%>% select(name,employer,occupation,code_final,manual_review_reason)
@@ -958,7 +963,7 @@ review_queue %>% filter(manual_review_reason == "subsector_needed: 76/77 require
 ```{r}
 write_csv(
   review_queue %>% select(any_of(review_queue_cols)),
-  "04_outputs/manual_review_queue_09-27-26.csv"
+  "04_outputs/manual_review_queue_09-28-26.csv"
 )
 cat(sprintf(
   "Review queue: %d unique entities (from %d raw rows; %d flagged + %d individual_100 + %d confidence sample)\n",
@@ -1081,12 +1086,148 @@ write_csv(contributors_3part,  "04_outputs/contributors_classified.csv")
 ```
 
 ```{r}
+today_all
+```
+
+
+```{r}
 contributors_entity %>% filter(code_final_source != "pre_classified (locked)") 
 ```
 
 ```{r}
 review_queue %>% filter(manual_review_reason == "subsector_needed: 76/77 requires more specific code")
 ```
+
+
+
+### temporary patch
+
+```{r}
+current_review <- read_csv("04_inputs/All contributors review queue - Classified contributors w_ review rows flagged.csv")
+```
+
+```{r}
+nrow(contributors_entity)
+nrow(current_review)
+```
+
+
+```{r}
+REVIEW_IP_PATH <- "04_inputs/All contributors review queue - Classified contributors w_ review rows flagged.csv"
+
+review_ip <- read_csv(REVIEW_IP_PATH, col_types = cols(.default = "c"),
+                      show_col_types = FALSE) %>%
+  rename(manual_review      = manual_review_needed) %>%
+  mutate(
+    manual_review = as.logical(manual_review),
+    .key = paste(trimws(coalesce(name, "")),
+                 trimws(coalesce(employer, "")),
+                 trimws(coalesce(occupation, "")), sep = "|")
+  )
+```
+
+
+```{r}
+# ── Temporary patch: reconcile with in-progress review file ──────────────
+REVIEW_IP_PATH <- "04_inputs/All contributors review queue - Classified contributors w_ review rows flagged.csv"
+
+.make_entity_key <- function(name, employer, occupation, entity_type, zip_codes) {
+  zip1 <- sub("\\|.*", "", trimws(coalesce(zip_codes, "")))
+  if_else(
+    tolower(coalesce(entity_type, "")) == "individual",
+    paste(trimws(coalesce(name, "")), trimws(coalesce(employer, "")),
+          trimws(coalesce(occupation, "")), zip1, sep = "|"),
+    paste(trimws(coalesce(name, "")), trimws(coalesce(employer, "")),
+          trimws(coalesce(occupation, "")), sep = "|")
+  )
+}
+
+review_ip <- read_csv(REVIEW_IP_PATH, col_types = cols(.default = "c"),
+                      show_col_types = FALSE) %>%
+  rename(manual_review      = manual_review_needed) %>%
+  mutate(
+    zip_codes = if_else(nchar(zip_codes) == 4,
+                      pad_zip(zip_codes),zip_codes),
+    manual_review = as.logical(manual_review),
+    .key = .make_entity_key(name, employer, occupation, entity_type, zip_codes)
+  )
+nrow(review_ip)
+```
+
+```{r}
+pad_zip <- function(z) {
+  z <- trimws(as.character(z))
+  needs_pad <- !is.na(z) & z != "" & str_detect(z, "^[0-9]+$") & nchar(z) < 5
+  z[needs_pad] <- paste0(strrep("0", 5 - nchar(z[needs_pad])), z[needs_pad])
+  substr(z, 1, 5)
+}
+```
+
+```{r}
+review_ip <- review_ip %>% mutate(
+  zip_codes = if_else(nchar(zip_codes) == 4,
+                      pad_zip(zip_codes),zip_codes)
+)
+```
+
+
+```{r}
+nrow(contributors_entity)
+```
+
+
+```{r}
+ce_keyed <- contributors_entity %>%
+  mutate(.key = .make_entity_key(name, employer, occupation, entity_type, zip_codes))
+
+# aggregate new flags per key — safe even if key isn't perfectly 1:1
+ce_flags <- ce_keyed %>%
+  filter(coalesce(manual_review, FALSE)) %>%
+  group_by(.key) %>%
+  summarise(
+    .new_reason = paste(sort(unique(na.omit(manual_review_reason))), collapse = " | "),
+    .groups = "drop"
+  )
+
+# rows in current run not in review file (new contributors)
+new_rows <- ce_keyed %>%
+  filter(!(.key %in% review_ip$.key)) %>%
+  select(-.key) %>%
+  mutate(across(everything(), as.character))
+
+cat(sprintf("New rows not in review file: %d\n", nrow(new_rows)))
+
+reconciled <- review_ip %>%
+  left_join(ce_flags, by = ".key") %>%
+  mutate(
+    manual_review = coalesce(manual_review, FALSE) | !is.na(.new_reason),
+    manual_review_reason = case_when(
+      is.na(.new_reason)          ~ manual_review_reason,
+      is.na(manual_review_reason) ~ .new_reason,
+      TRUE ~ paste0(manual_review_reason, " | ", .new_reason)
+    ),
+    manual_review = as.character(manual_review)
+  ) %>%
+  select(-.key, -.new_reason)
+
+reconciled_out <- bind_rows(reconciled, new_rows) %>%
+  arrange(name, employer)
+
+cat(sprintf("Reconciled: %d rows (%d flagged)\n",
+            nrow(reconciled_out),
+            sum(trimws(tolower(coalesce(reconciled_out$manual_review, ""))) == "true")))
+
+```
+
+
+
+
+
+
+```{r}
+write_csv(new_rows, "04_outputs/pac_contrib_patch.csv")
+```
+
 
 
 

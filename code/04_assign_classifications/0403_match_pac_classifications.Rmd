@@ -31,28 +31,42 @@ hash_id <- function(keys, prefix) {
 ```
 
 ```{r}
-over_5k_tagged <- read_csv("../01_contributor_pipeline/01_outputs/over_5k_tagged_09-08-26.csv",
+over_5k_tagged <- read_csv("../01_contributor_pipeline/01_outputs/over_5k_tagged_09-28-26.csv",
                                  col_types = cols(.default = "c", contributor_amount = "d"))
 
-pac_classifiability <- read_csv("../01_contributor_pipeline/01_outputs/pac_classifiability_09-08-26.csv",
+pac_classifiability <- read_csv("../01_contributor_pipeline/01_outputs/pac_classifiability_09-28-26.csv",
                                  col_types = cols(.default = "c", total_received = "d"))
 
-pac_class_input <- read_csv("../01_contributor_pipeline/01_outputs/pac_classification_input_09-08-26.csv",
+pac_class_input <- read_csv("../01_contributor_pipeline/01_outputs/pac_classification_input_09-28-26.csv",
                                  col_types = cols(.default = "c"))
 
-ordered_pacs <- read_csv("../01_contributor_pipeline/01_outputs/pac_traversal_order_09-08-26.csv") %>%
+ordered_pacs <- read_csv("../01_contributor_pipeline/01_outputs/pac_traversal_order_09-28-26.csv") %>%
   arrange(order) %>% pull(pac_id) %>% as.character()
 
-stuck_pacs <- read_csv("../01_contributor_pipeline/01_outputs/pac_stuck_pacs_09-08-26.csv") %>%
+stuck_pacs <- read_csv("../01_contributor_pipeline/01_outputs/pac_stuck_pacs_09-28-26.csv") %>%
   pull(pac_id) %>% as.character()
 
-pac_final <- read_csv("04_outputs/final_classifications_full_08-23-25.csv",
+pac_final <- read_csv("04_outputs/archive/final_classifications_full_08-23-25.csv",
                                  col_types = cols(.default = "c")) # final classifications after manual review (including pac and direct contributors)
 
 pac_review <- read_csv("04_inputs/pac_manual_review_reconciled.csv",
                        col_types = cols(.default = "c", under_5k_amount = "d"))
 ```
 
+
+```{r}
+pac_review %>% filter(is_assoc == TRUE) %>% select(Contributor.Name,industry_override_under_5k,is_assoc)
+```
+
+- is_union() already working as intended. 
+
+```{r}
+unique(x[,c("Recipient.Committee","Recipient.Committee.ID")])
+```
+Ben Allen:	1460970, 1483889
+Becerra:	1480025
+Steve Hilton: 1480425
+Jane Kim:	1485530
 
 ### validation: reviewer-assigned pac_ids
 
@@ -193,10 +207,17 @@ skip_pac_ids <- pac_review %>%
 length(skip_pac_ids)
 ```
 
+- should we add unknown_data_sufficiency to the pac_override? 
+
+```{r}
+pac_review <- pac_review %>% select(-low_data_sufficiency)
+```
+
 
 ```{r}
 pac_override <- pac_review %>%
-  filter(!is.na(pac_id), pac_id != "", !pac_id %in% skip_pac_ids) %>%
+  filter(!is.na(pac_id), pac_id != "", !pac_id %in% skip_pac_ids,
+         coalesce(is_major_donor, "FALSE") != "TRUE") %>%
   left_join(subsector_lookup, by = c("industry_override_under_5k" = "subsector_description")) %>%
   left_join(sector_lookup, by = c("industry_override_under_5k" = "sector_description"),
             suffix = c("", "_broad")) %>%
@@ -208,7 +229,9 @@ pac_override <- pac_review %>%
       pac_id   = as.character(pac_id),
       # unitemized + entities that contributed <$5k in aggregate counted as under_5k
       under_5k = coalesce(as.numeric(under_5k_amount), 0) +
-                 coalesce(as.numeric(unitemized_amount), 0)
+                 coalesce(as.numeric(unitemized_amount), 0),
+      low_data_sufficiency = as.logical(low_data_sufficiency),
+      is_max_depth         = coalesce(status == "max_depth_reached", FALSE)
     ),
     by = "pac_id"
   ) %>%
@@ -217,7 +240,7 @@ pac_override <- pac_review %>%
     is_federal      = (!is.na(fec_id) & trimws(coalesce(fec_id, "")) != "") |
                       coalesce(is_federal_pac, "") == "TRUE"
   ) %>%
-  select(pac_id, override_sector, industry_override_under_5k, under_5k, is_federal)
+  select(pac_id, override_sector, industry_override_under_5k, under_5k, is_federal, low_data_sufficiency, is_max_depth)
 
 # warning for descriptions that didn't match a sector code
 unmapped <- pac_override %>% filter(is.na(override_sector))
@@ -229,6 +252,8 @@ if (nrow(unmapped) > 0) {
 pac_override_map <- setNames(seq_len(nrow(pac_override)), pac_override$pac_id)
 ```
 
+Name overrides will never have received contributions. 
+  - but could include low_data_sufficiency here.
 
 ```{r}
 # name-based override for pac_review rows with no pac_id 
@@ -245,7 +270,8 @@ skip_pac_names <- pac_review %>%
   pull(name_key)
 
 pac_name_override <- pac_review %>%
-  filter(is.na(pac_id) | pac_id == "") %>%
+  filter(is.na(pac_id) | pac_id == "",
+         coalesce(is_major_donor, "FALSE") != "TRUE") %>%
   mutate(name_key = toupper(trimws(Contributor.Name))) %>%
   filter(!name_key %in% skip_pac_names) %>%
   left_join(subsector_lookup, by = c("industry_override_under_5k" = "subsector_description")) %>%
@@ -286,7 +312,8 @@ all_pac_review_by_name <- pac_review %>%
   filter(
     !(coalesce(unresolvable_reason, "") == "additional_review_req" |
       is.na(industry_override_under_5k)                            |
-      trimws(coalesce(industry_override_under_5k, "")) %in% c("", "PENDING"))
+      trimws(coalesce(industry_override_under_5k, "")) %in% c("", "PENDING")),
+    coalesce(is_major_donor, "FALSE") != "TRUE"
   ) %>%
   mutate(name_key = toupper(trimws(coalesce(Contributor.Name, "")))) %>%
   filter(name_key != "") %>%
@@ -429,6 +456,9 @@ direct_by_pac_list <- over_5k_direct %>%
   split(~parent_pac_id)
 ```
 
+
+
+
 ```{r}
 # location variants and contribution counts per parent_pac_id x entity_group
 # for the PAC contributor audit
@@ -476,8 +506,30 @@ pac_deps <- over_5k_tagged %>%
 ```
 
 ```{r}
+pac_override[pac_override_map[["1065909"]],]
+```
+
+
+```{r}
+over_5k_tagged %>% filter(low_data_sufficiency == TRUE) %>% distinct(contributor_type)
+```
+
+
+
+- add low_data_suff to this map 
+
+
+```{r}
 industry_distrib <- list()
 pac_attribution  <- list()
+
+low_data_suff_pac_ids <- pac_override %>%
+  filter(coalesce(low_data_sufficiency, FALSE)) %>%
+  pull(pac_id)
+
+max_depth_pac_ids <- pac_override %>%
+  filter(coalesce(is_max_depth, FALSE)) %>%
+  pull(pac_id)
 
 compute_industry_distrib <- function(pid) {
   pid       <- as.character(pid)
@@ -540,8 +592,20 @@ compute_industry_distrib <- function(pid) {
     pac_attribution[[pid]] <<- bind_rows(attr_rows)
     return(invisible(NULL))
   }
+  
+  # (4) Low data sufficiency PACs
+  if (!is.null(ovr) && isTRUE(ovr$low_data_sufficiency)) {
+    pac_row <- pac_classifiability[pac_classifiability$pac_id == pid, ]
+    total   <- if (nrow(pac_row) > 0) coalesce(pac_row$total_received[1], 0) else 0
+    code    <- coalesce(ovr$override_sector, "99")
+    industry_distrib[[pid]] <<- if (total > 0) setNames(total, code) else numeric(0)
+    if (total > 0)
+      add_attr(NA_character_, NA_character_, "low_data_suff_override", total, code, total)
+    pac_attribution[[pid]] <<- bind_rows(attr_rows)
+    return(invisible(NULL))
+  }
 
-  # (4) non-federal PAC: over-$5k direct + recursive PAC-type + under-$5k override
+  # (5) non-federal PAC: over-$5k direct + recursive PAC-type + under-$5k override
 
   direct    <- direct_by_pac_list[[pid]] # get direct contributors
   ind_amounts <- if (!is.null(direct) && nrow(direct) > 0)
@@ -564,11 +628,17 @@ compute_industry_distrib <- function(pid) {
     all_pac_rows <- pac_rows %>% filter(contributor_type == "pac")
 
     # PAC contributors with a committee id: distribute recursively
-    id_rows <- all_pac_rows %>% filter(!is.na(contributor_id) & contributor_id != "")
+    # (low_data_sufficiency and max_depth_reached contributors handled separately below)
+    id_rows <- all_pac_rows %>%
+      filter(!is.na(contributor_id) & contributor_id != "",
+             !contributor_id %in% low_data_suff_pac_ids,
+             !contributor_id %in% max_depth_pac_ids)
     for (i in seq_len(nrow(id_rows))) {
       child_id     <- id_rows$contributor_id[i]
       child_amount <- id_rows$contributor_amount[i]
       child_dist   <- industry_distrib[[child_id]]
+      
+      
       if (is.null(child_dist) || length(child_dist) == 0) {
         ind_amounts["99"] <- coalesce(ind_amounts["99"], 0) + child_amount
         add_attr(id_rows$contributor_name[i], child_id, "child_pac",
@@ -603,7 +673,7 @@ compute_industry_distrib <- function(pid) {
       add_attr(child_name, NA_character_, "child_pac_no_id",
                child_amount, code, child_amount)
     }
-
+    
     # federal_pac, candidate_pac, pac_no_id, pac_unmatched_id contributors: classified via pac_review override
     # lookup order: 
     # (1) contributor_id match in pac_override_map,
@@ -627,6 +697,42 @@ compute_industry_distrib <- function(pid) {
 
       ind_amounts[code] <- coalesce(ind_amounts[code], 0) + child_amount
       add_attr(r$contributor_name, r$contributor_id, r$contributor_type,
+               child_amount, code, child_amount)
+    }
+
+    # low_data_sufficiency PAC contributors: classified directly by override sector
+    low_data_suff_contrib_rows <- all_pac_rows %>%
+      filter(!is.na(contributor_id) & contributor_id != "",
+             contributor_id %in% low_data_suff_pac_ids)
+    for (i in seq_len(nrow(low_data_suff_contrib_rows))) {
+      r            <- low_data_suff_contrib_rows[i, ]
+      child_id     <- as.character(r$contributor_id)
+      child_amount <- r$contributor_amount
+      code <- if (child_id %in% names(pac_override_map)) {
+        coalesce(pac_override$override_sector[pac_override_map[[child_id]]], "99")
+      } else {
+        "99"
+      }
+      ind_amounts[code] <- coalesce(ind_amounts[code], 0) + child_amount
+      add_attr(r$contributor_name, r$contributor_id, "low_data_suff_override",
+               child_amount, code, child_amount)
+    }
+
+    # max_depth_reached PACs were not traversed
+    max_depth_contrib_rows <- all_pac_rows %>%
+      filter(!is.na(contributor_id) & contributor_id != "",
+             contributor_id %in% max_depth_pac_ids)
+    for (i in seq_len(nrow(max_depth_contrib_rows))) {
+      r            <- max_depth_contrib_rows[i, ]
+      child_id     <- as.character(r$contributor_id)
+      child_amount <- r$contributor_amount
+      code <- if (child_id %in% names(pac_override_map)) {
+        coalesce(pac_override$override_sector[pac_override_map[[child_id]]], "99")
+      } else {
+        "99"
+      }
+      ind_amounts[code] <- coalesce(ind_amounts[code], 0) + child_amount
+      add_attr(r$contributor_name, r$contributor_id, "max_depth_override",
                child_amount, code, child_amount)
     }
   }
@@ -655,6 +761,19 @@ compute_industry_distrib <- function(pid) {
   industry_distrib[[pid]] <<- ind_amounts
   pac_attribution[[pid]]  <<- bind_rows(attr_rows)
 }
+```
+
+```{r}
+over_5k_by_pac[["1331005"]] %>% filter(contributor_type == "pac")
+```
+
+```{r}
+over_5k_tagged %>% filter(contributor_id == "1460720")
+```
+
+
+```{r}
+pac_classifiability %>% filter(low_data_sufficiency == TRUE)
 ```
 
 

@@ -44908,5 +44908,41 @@
     "match_type": "largest",
     "error": null,
     "candidates": []
+  },
+  "0601000000|best|LABORERS PACIFIC SOUTHWEST REGIONAL ORGANIZING COALITION": {
+    "query": "Laborers Pacific Southwest Regional Organizing Coalition",
+    "status": "no_results",
+    "match_name": null,
+    "naics_code": null,
+    "naics_description": null,
+    "industry_short": null,
+    "business_description": null,
+    "address": null,
+    "city": null,
+    "size_class": null,
+    "num_results": 0,
+    "empid": null,
+    "strategy_used": "best",
+    "match_type": null,
+    "error": null,
+    "candidates": []
+  },
+  "0601000000|best|SONY PICTURES ENT. INC.": {
+    "query": "Sony Pictures Ent. Inc.",
+    "status": "no_results",
+    "match_name": null,
+    "naics_code": null,
+    "naics_description": null,
+    "industry_short": null,
+    "business_description": null,
+    "address": null,
+    "city": null,
+    "size_class": null,
+    "num_results": 0,
+    "empid": null,
+    "strategy_used": "best",
+    "match_type": null,
+    "error": null,
+    "candidates": []
   }
 }
