@@ -55,6 +55,7 @@ env/
 
 # ── Pipeline output directories — only large files (>5MB) gitignored ─────────
 # 01_outputs
+code/01_contributor_pipeline/01_inputs/contributions-normalized.csv
 code/01_contributor_pipeline/01_outputs/indiv_pairs_tmp.csv
 code/01_contributor_pipeline/01_outputs/combined_contributions_os_matches_09-11-26.csv
 code/01_contributor_pipeline/01_outputs/classified_contributors_09-13-26.csv
