@@ -85,7 +85,7 @@ x <- x %>% filter(!is.na(candidate) & candidate != "")
 message(sprintf("Excluded %d row(s) (no candidate); %d remain.", n_before - nrow(x), nrow(x)))
 
 
-# fold anything without a real code into "99" 
+# fold anything without a real code into "99"
 
 x <- x %>%
   mutate(
@@ -123,4 +123,3 @@ breakdown %>%
 dir.create(dirname(OUTPUT_PATH), showWarnings = FALSE, recursive = TRUE)
 write_csv(breakdown, OUTPUT_PATH)
 message(sprintf("Wrote %d row(s) to %s", nrow(breakdown), OUTPUT_PATH))
-

@@ -3199,70 +3199,11 @@ rla_disambig_queue_w_threshold <- rla_disambig_queue %>%
 rla_disambig_queue_w_threshold
 ```
 
-```{r}
-rla_disambig_queue
-```
-
-```{r}
-disambig_profile
-```
-
-
-```{r}
-rla_disambig_queue_w_threshold
-```
-
 
 ```{r}
 today <- format(Sys.Date(), "%m-%d-%y")
 DISAMBIG_REVIEW_OUTPUT_PATH <- paste0("01_outputs/individual_disambiguation_queue", today, ".csv")
 write_csv(rla_disambig_queue_w_threshold, DISAMBIG_REVIEW_OUTPUT_PATH)
-```
-
-
-```{r}
-rla_disambig_queue %>% group_by(Recipient.Committee.ID,Normalized) %>% filter(n() > 1)
-```
-
-
-### look at contributors (checks during review)
-
-```{r}
-contributions_full %>% filter(grepl("ADAMS, GREG",toupper(Contributor.Name)))
-```
-
-```{r}
-contributions_full %>% filter(toupper(Contributor.Name) == "WILLIAMS, PAUL" & Recipient.Committee.ID == "1071446") %>% arrange(Contributor.City)
-```
-
-```{r}
-contributions_full %>% filter((grepl("COLLINS, ROBERT",toupper(Contributor.Name)) & Recipient.Committee.ID == "1480425")) %>%
-  mutate(entity_name = toupper(Contributor.Name), is_pac_contribution = FALSE) %>%
-  rename(Ballot.Measure = Ballot.Measure.s.) %>% 
-  add_recipient_key() %>%
-  arrange(Contributor.City) %>% select(entity_name,Contributor.Employer,Contributor.Occupation,recipient_key, Contributor.City,Contributor.State,Amount,Normalized.Name,Recipient.Committee.ID,Recipient.Committee,Contributor.Zip.Code)
-```
-
-Dr Robert Collins: 
-- Bell Canyon	CA	91307
-- Los Angeles	CA	91606
-- Bell Canyon	CA	91307
-
-
-425	Steve Hilton for Governor 2026	91307
-Retired	HILTON, STEVE | Governor	Diamond Springs	CA	100	ROBERT COLLINS	1480425	Steve Hilton for Governor 2026	95619-9758
-Retired	HILTON, STEVE | Governor	Pensacola	FL	50	ROBERT COLLINS	1480425	Steve Hilton for Governor 2026	32507
-Retired	HILTON, STEVE | Governor	Ramona	CA	50	ROBERT COLLINS	1480425	Steve Hilton for Governor 2026	92065
-
-Robert Collins: 
-- Ramona	CA	92065 -> far from LA: can't find; Robert J; 77
-- Pensacola	FL	32507 - 2 ppl matchin gthis
-- Diamond Springs	CA	95619-9758 -> far from LA - several 
-- ramona and diamond springs are also far from each other
-- all these contributions are much smaller the from Dr. (lowest is 500, i guess not that diff from 50)
-
-```{r}
-contributions_full %>% filter(Recipient.Name == "HILTON, STEVE") %>% distinct(Recipient.Committee.ID)
 ```
 
 
@@ -3377,11 +3318,6 @@ cat("New contributors in profiled groups:", nrow(new_in_profiled_group_queue),
 rla_disambig_queue$Recipient.Committee.ID <- as.character(rla_disambig_queue$Recipient.Committee.ID)
 new_in_profiled_group_queue$Recipient.Committee.ID <- as.character(new_in_profiled_group_queue$Recipient.Committee.ID)
 ```
-
-```{r}
-new_in_profiled_group_queue
-```
-
 
 ```{r}
 nrow(rla_disambig_queue_w_threshold)

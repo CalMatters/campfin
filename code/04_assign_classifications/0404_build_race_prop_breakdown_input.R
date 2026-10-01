@@ -37,7 +37,10 @@ LABEL_URL <- "https://docs.google.com/spreadsheets/d/11QHvNJsdtMlc1YKo_iNvMB_Jfn
 
 OUT_PATH <- paste0("04_outputs/race_prop_breakdown_input_", today, ".csv")
 
-UNCATEGORIZED_CODE <- "99"
+UNCATEGORIZED_CODE     <- "99"
+UNITEMIZED_CODE        <- "101"
+UNITEMIZED_LABEL       <- "Unitemized Contributions"
+SMALL_DOLLAR_THRESHOLD <- 100
 
 # race/prop filter
 race_filter <- function(df) {
@@ -249,14 +252,73 @@ cat(sprintf("PAC-to-race rows exploded: %d original contributions -> %d industry
 # contribution_ids (replaced by the exploded pac rows above -
 # otherwise that money would be double counted)
 
+# subgroup-disambiguated entity_uuid for individuals (written by 0102c)
+entity_lookup_files <- Sys.glob("../01_contributor_pipeline/01_outputs/indiv_entity_lookup_*.csv")
+if (length(entity_lookup_files) > 0) {
+  entity_lookup <- read_csv(
+    entity_lookup_files[order(file.mtime(entity_lookup_files), decreasing = TRUE)][1],
+    col_types = cols(.default = "c"), show_col_types = FALSE
+  ) %>%
+    group_by(contribution_id) %>% slice(1) %>% ungroup()
+} else {
+  entity_lookup <- tibble(contribution_id = character(), entity_uuid = character())
+  warning("No indiv_entity_lookup_*.csv found — small-dollar check will use Normalized.Name only")
+}
+
 base_classified <- base %>%
   left_join(direct_lookup, by = "contribution_id") %>%
   filter(!contribution_id %in% pac_input$contribution_id) %>%
+  left_join(entity_lookup, by = "contribution_id") %>%
   mutate(
     code_final             = code,
     code_final_description = code_label,
-    candidate              = coalesce(na_if(`Recipient Name`, ""), race_prop)
-  ) 
+    candidate              = coalesce(na_if(`Recipient Name`, ""), race_prop),
+    recipient_key          = case_when(
+      !is.na(Ballot.Measure) & trimws(Ballot.Measure) != "" ~ Ballot.Measure,
+      !is.na(Office)         & trimws(Office)         != "" ~ paste(`Recipient Name`, Office, sep = " | "),
+      TRUE                                                   ~ `Recipient Name`
+    ),
+    .agg_key = if_else(
+      !is.na(entity_uuid),
+      paste(entity_uuid, recipient_key, sep = "\x00"),
+      paste(coalesce(Normalized.Name, toupper(trimws(`Contributor Name`))), recipient_key, sep = "\x00")
+    )
+  )
+
+# classify unitemized and small-dollar contributions as code 101
+unitemized_name_mask <- trimws(toupper(coalesce(
+  base_classified$Normalized.Name, base_classified$`Contributor Name`, ""
+))) == "UNITEMIZED CONTRIBUTIONS"
+
+small_dollar_keys <- base_classified %>%
+  group_by(.agg_key) %>%
+  summarise(contributor_total = sum(Amount, na.rm = TRUE), .groups = "drop") %>%
+  filter(contributor_total < SMALL_DOLLAR_THRESHOLD) %>%
+  pull(.agg_key)
+
+unitemized_mask <- unitemized_name_mask | base_classified$.agg_key %in% small_dollar_keys
+
+# sanity check: these should always be NA/"99" or already "101" — never a real code
+overwrite_conflicts <- base_classified %>%
+  filter(unitemized_mask,
+         !is.na(code_final), code_final != "", code_final != UNCATEGORIZED_CODE, code_final != UNITEMIZED_CODE)
+if (nrow(overwrite_conflicts) > 0) {
+  warning(sprintf(
+    "%d row(s) flagged as unitemized/small-dollar already have a real code and will be overwritten: %s",
+    nrow(overwrite_conflicts),
+    paste(unique(overwrite_conflicts$code_final), collapse = ", ")
+  ))
+  print(overwrite_conflicts %>%
+    select(`Contributor Name`, Normalized.Name, code_final, Amount, recipient_key) %>%
+    arrange(code_final))
+}
+
+base_classified <- base_classified %>%
+  mutate(
+    code_final = if_else(unitemized_mask, UNITEMIZED_CODE, code_final),
+    code_final_description = if_else(unitemized_mask, UNITEMIZED_LABEL, code_final_description)
+  ) %>%
+  select(-.agg_key, -entity_uuid)
 
 base_enriched <- base_classified %>%
   transmute(

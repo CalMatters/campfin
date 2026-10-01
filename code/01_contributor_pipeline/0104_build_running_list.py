@@ -1,8 +1,7 @@
 """
 0104_build_running_list.py
 
-Build the alternative running list: H-1B and EDD employers ONLY and their raw NAICS codes.
-Mirrors what 0301/0303_build_running_list.py does, but excludes OpenSecrets data and manually labeled data. 
+Build the running list: H-1B and EDD employers ONLY and their raw NAICS codes.
 -------
   - H1BEmployer_match.csv : loaded via load_h1b() from 0301_build_running_list.py
   - running_list.csv      : existing masterfile; rows with source == "edd" reused as-is
@@ -99,7 +98,7 @@ def build_running_list() -> pd.DataFrame:
         .str.strip()
     )
 
-    # normalize codes before comparison
+    # normalize codes before comparison between sources
     running["_parent_code"] = running["naics_code"].map(_naics_parent)
     has_code = (running["_parent_code"] != "") & (running["_stripped"] != "")
     code_by_base = running[has_code].groupby("_stripped")["_parent_code"].nunique()

@@ -102,6 +102,11 @@ nrow(contributions_full)
 
 
 ```{r}
+contribs <- read_csv("01_inputs/power_search_contributions_raw.csv")
+```
+
+
+```{r}
 # data to map contributor ids
 id_map_full <- read_tsv("01_inputs/FILERNAME_CD.tsv", col_types = cols(.default = "c"))
 id_map_full <- id_map_full %>% filter(!is.na(FILER_ID) & !is.na(XREF_FILER_ID))
@@ -113,7 +118,7 @@ id_map <- unique(id_map_full[,c("XREF_FILER_ID","FILER_ID","FILER_TYPE")])
 #new_pacs <- read.csv("01_outputs/new_prop_pacs.csv")
 #old_pacs <- read.csv("01_outputs/pac_input_09-07-26.csv")
 #x <- bind_rows(new_pacs, old_pacs)
-x <- read_csv("01_outputs/pac_input_09-25-26.csv")
+x <- read_csv("01_outputs/pac_input_09-27-26.csv")
 
 # pac manual review feedback — matched first by pac_id, then by Contributor.Name for no-id rows
 pac_manual_review <- read_csv(
@@ -128,6 +133,9 @@ pac_manual_review <- read_csv(
       is.na(industry_override_under_5k) |
       trimws(coalesce(industry_override_under_5k, "")) %in% c("", "PENDING")
     ),
+    is_major_donor   = coalesce(is_major_donor, "FALSE") == "TRUE" |
+                       grepl("major donor", coalesce(notes, ""), ignore.case = TRUE) |
+                       trimws(coalesce(industry_override_under_5k, "")) == "Major Donors/Megadonors",
     is_candidates_pp = trimws(coalesce(industry_override_under_5k, "")) == "Candidates/Political Parties",
     is_candidate     = trimws(coalesce(note_subcategory, "")) == "Candidate" &
                          !grepl("ballot measure", tolower(Contributor.Name)) &
@@ -151,6 +159,9 @@ pac_manual_review <- read_csv(
       is.na(industry_override_under_5k) |
       trimws(coalesce(industry_override_under_5k, "")) %in% c("", "PENDING")
     ),
+    is_major_donor   = coalesce(is_major_donor, "FALSE") == "TRUE" |
+                       grepl("major donor", coalesce(notes, ""), ignore.case = TRUE) |
+                       trimws(coalesce(industry_override_under_5k, "")) == "Major Donors/Megadonors",
     is_candidates_pp = trimws(coalesce(industry_override_under_5k, "")) == "Candidates/Political Parties",
     is_candidate     = trimws(coalesce(note_subcategory, "")) == "Candidate" &
                          !grepl("ballot measure", tolower(Contributor.Name)) &
@@ -183,7 +194,7 @@ missing_id_corrections <- read_sheet(
   col_types = "c"
 ) %>%
   select(contributor_name, recipient_committee_id, amount, start_date,
-         contributor_city, corrected_id, is_federal_pac)
+         contributor_city, corrected_id, is_federal_pac,flag)
 
 filer_id_patch <- read_sheet(
   "https://docs.google.com/spreadsheets/d/1UnO3wldvEo84Md0ac5jbpg4SqWzvPle3yh15e_DGAVk",
@@ -192,6 +203,7 @@ filer_id_patch <- read_sheet(
 ) %>%
   select(Contributor.ID, FILER_ID, FILER_TYPE)
 ```
+
 
 ## Clean up data 
 
@@ -354,17 +366,10 @@ contributions <- contributions %>%
 ```
 
 
-```{r}
+```{r, eval = FALSE}
 contributions %>% filter(effective_Contributor.ID == "NA")
-```
-
-
-```{r}
 x %>% filter(!is.na(effective_Contributor.ID) & is.na(FILER_ID))
 contributions %>% filter(!is.na(effective_Contributor.ID) & is.na(std_contributor_id))
-```
-
-```{r}
 x %>% filter(!is.na(effective_Contributor.ID) & is.na(FILER_TYPE))
 contributions %>% filter(!is.na(effective_Contributor.ID) & is.na(FILER_TYPE)) %>% select(Contributor.Name,effective_Contributor.ID,Contributor.ID,std_contributor_id, FILER_TYPE)
 ```
@@ -509,6 +514,8 @@ prepped <- prepped %>%
                                Normalized %in% fed_pac_normalized_names
   )
 ```
+
+
 
 
 ```{r}
@@ -840,7 +847,7 @@ categorize_contributor <- function(name,amount) {
   name_upper <- toupper(name)
   case_when(
     name_upper == "UNITEMIZED CONTRIBUTIONS" ~ "unitemized",
-    amount <= 100 ~ "small_dollar",
+    #amount <= 100 ~ "small_dollar",
     amount < 5000   ~ "under_5k",
     TRUE  ~ "over_5k" 
   )
@@ -888,14 +895,14 @@ traverse_pac_graph <- function(seed_ids, ref, id_map, max_depth = 5, federal_ids
     }
     visited <- c(visited, pac_id)
 
-    # federal PACs are leaves — don't fetch their contributors
+    # candidate PACs are classified directly — don't fetch their contributors
     if (pac_id %in% federal_ids) {
       pac_summaries <- append(pac_summaries, list(tibble(
         pac_id            = pac_id, depth = depth, path = path,
         status            = "federal_pac",
         total_received    = NA_real_, total_donated_all = NA_real_,
         data_sufficiency  = NA_real_,
-        unitemized_amount = NA_real_, small_dollar_amount = NA_real_,
+        unitemized_amount = NA_real_, #small_dollar_amount = NA_real_,
         under_5k_amount   = NA_real_, over_5k_amount = NA_real_
       )))
       next
@@ -908,7 +915,7 @@ traverse_pac_graph <- function(seed_ids, ref, id_map, max_depth = 5, federal_ids
         status            = "candidate_pac",
         total_received    = NA_real_, total_donated_all = NA_real_,
         data_sufficiency  = NA_real_,
-        unitemized_amount = NA_real_, small_dollar_amount = NA_real_,
+        unitemized_amount = NA_real_, #small_dollar_amount = NA_real_,
         under_5k_amount   = NA_real_, over_5k_amount = NA_real_
       )))
       next
@@ -957,7 +964,7 @@ traverse_pac_graph <- function(seed_ids, ref, id_map, max_depth = 5, federal_ids
       total_donated_all = total_donated_all,
       data_sufficiency  = total_received / total_donated_all,   # NA if total_donated_all == 0
       unitemized_amount  = sum(contribs$Amount[contribs$contributor_category == "unitemized"],  na.rm = TRUE),
-      small_dollar_amount = sum(contribs$Amount[contribs$contributor_category == "small_dollar"],  na.rm = TRUE),
+      #small_dollar_amount = sum(contribs$Amount[contribs$contributor_category == "small_dollar"],  na.rm = TRUE),
       under_5k_amount    = sum(contribs$Amount[contribs$contributor_category == "under_5k"],    na.rm = TRUE),
       over_5k_amount     = sum(contribs$Amount[contribs$contributor_category == "over_5k"],     na.rm = TRUE)
     )))
@@ -1125,8 +1132,6 @@ if (nrow(name_id_conflicts) > 0) {
 
 **NOTE** Expecting `PACE OF CALIFORNIA SCHOOL EMPLOYEES ASSOCIATION ` and `PACE OF CALIFORNIA SCHOOL EMPLOYEES ASSOCIATION - ISSUES` to be associated with multiple ids - not an error.
 
-
-
 ```{r}
 # backfill pac_summaries for federal/candidate PAC contributors blocked from the
 # traversal queue. otherwise the pac_classifiability join in over_5k_tagged
@@ -1149,7 +1154,7 @@ untraversed_pacs <- over_5k_contributors %>%
     total_donated_all   = NA_real_,
     data_sufficiency    = NA_real_,
     unitemized_amount   = NA_real_,
-    small_dollar_amount = NA_real_,
+    #small_dollar_amount = NA_real_,
     under_5k_amount     = NA_real_,
     over_5k_amount      = NA_real_
   )
@@ -1201,6 +1206,7 @@ contributor_type_lookup <- over_5k_contributors %>%
 #write.csv(pac_summaries, "01_outputs/pac_summaries.csv",row.names = FALSE)
 #write.csv(over_5k_contributors, "01_outputs/over_5k_contribs.csv",row.names = FALSE)
 ```
+
 
 
 ### Add flags for federal PAC signals
@@ -1288,7 +1294,7 @@ pac_classifiability <- pac_summaries %>%
     low_data_sufficiency     = !is.na(data_sufficiency) & data_sufficiency < DATA_SUFFICIENCY_THRESHOLD, # threshold is 0.75
     unknown_data_sufficiency = is.na(data_sufficiency), # contributors to PAC not found
     pct_unitemized = unitemized_amount / total_received,
-    pct_small_dollar = small_dollar_amount / total_received,
+    #pct_small_dollar = small_dollar_amount / total_received,
     pct_over_5k  = over_5k_amount / total_received,
     data_ok = status == "resolved" & !is_federal_pac & !low_data_sufficiency & !unknown_data_sufficiency
   )
@@ -1301,6 +1307,62 @@ pac_classifiability <- pac_summaries %>%
 min(pac_classifiability$pct_over_5k,na.rm = TRUE)
 max(pac_classifiability$pct_over_5k,na.rm = TRUE)
 ```
+
+```{r}
+pac_classifiability %>% filter(depth == 5)
+```
+
+```{r}
+over_5k_contributors %>% filter(contributor_id == "1026400")
+```
+
+
+```{r}
+which(seed_ids == "1476729")
+which(seed_ids == "1029026")
+which(seed_ids == "1391325")
+which(seed_ids == "1025607")
+```
+
+```{r}
+over_5k_contributors %>% filter(contributor_id %in% depth_5_ids) %>% group_by(contributor_id) %>% filter(n_distinct(depth) == 1)
+```
+
+
+### data check - no received contributions pacs
+
+```{r}
+no_recip_pacs <- pac_classifiability %>% filter(unknown_data_sufficiency == TRUE, is_candidate_pac == FALSE, is_federal_pac == FALSE) %>% pull(pac_id)
+contributions_full %>% filter(Recipient.Committee.ID %in% no_recip_pacs) %>% distinct(Recipient.Committee.ID,Recipient.Committee)
+```
+
+
+```{r}
+over_5k_contributors %>% filter(contributor_id == "1051385" | contributor_id == "1026400" | contributor_id == "1018998")
+```
+
+All of these have a depth of 5 -> contributors weren't pulled. 
+
+```{r}
+depth_5_ids <- over_5k_contributors %>% filter(depth == 5 & contributor_type == "pac") %>% pull(contributor_id)
+```
+
+
+```{r}
+which(seed_ids == "1029026")
+which(seed_ids == "1391325")
+which(seed_ids == "1025607")
+```
+
+```{r}
+pac_classifiability %>% filter(pac_id == "1391325")
+```
+- this one actually hasn't received any contributions, which is why it didn't show up.
+
+```{r}
+contributions_full %>% filter(Recipient.Committee.ID == "1391325")
+```
+
 
 
 ### Flag each $5k contributor as resolvable or not
@@ -1775,6 +1837,7 @@ can determine how to classify the under $5k entities.
 
 ### Generate review queue
 
+
 ```{r}
 contributions_agg$Recipient.Committee.ID <- as.character(contributions_agg$Recipient.Committee.ID)
 contributions$Recipient.Committee.ID <- as.character(contributions$Recipient.Committee.ID)
@@ -1834,12 +1897,54 @@ dc_pac_ids <- prepped %>%
 norm_pac_name <- function(x) toupper(x) %>% str_replace_all("[^A-Z0-9]", " ") %>% str_squish()
 
 already_reviewed_pac_ids <- pac_manual_review %>%
-  filter(!is.na(pac_id), is_resolved) %>%
+  filter(!is.na(pac_id), is_resolved | is_major_donor) %>%
   pull(pac_id) %>% as.character()
 already_reviewed_pac_names <- pac_manual_review %>%
-  filter(is_resolved) %>%
+  filter(is_resolved | is_major_donor) %>%
   mutate(name_key = norm_pac_name(Contributor.Name)) %>%
   pull(name_key)
+
+# reclassify over_5k_tagged entries that are known-not-pacs based on:
+# (a) major donor feedback from pac_manual_review
+# (b) flag = "not a pac" or "intermediary/unitemized" from missing_id_corrections
+# applies only to pac_no_id and unresolvable major_donor_ie_committee rows;
+# skips anything with a contributor_id that maps to a recipient committee
+major_donor_noid_names <- pac_manual_review %>%
+  filter(is_major_donor) %>%
+  mutate(.key = norm_pac_name(coalesce(Contributor.Name, ""))) %>%
+  pull(.key) %>% unique()
+
+not_pac_names <- missing_id_corrections %>%
+  filter(trimws(tolower(coalesce(flag, ""))) %in% c("not a pac", "intermediary/unitemized")) %>%
+  mutate(.key = norm_pac_name(contributor_name)) %>%
+  pull(.key) %>% unique()
+
+combined_not_pac_names <- unique(c(major_donor_noid_names, not_pac_names))
+
+recipient_committee_ids <- id_map %>%
+  filter(FILER_TYPE == "RECIPIENT COMMITTEE") %>%
+  pull(FILER_ID) %>% unique()
+
+over_5k_tagged <- over_5k_tagged %>%
+  mutate(
+    .name_key    = norm_pac_name(coalesce(contributor_name, "")),
+    .no_rc_id    = is.na(contributor_id) | !contributor_id %in% recipient_committee_ids,
+    .is_pac_no_id   = contributor_type == "pac_no_id",
+    .is_unresolv_md = contributor_type == "major_donor_ie_committee" & !coalesce(is_resolvable, FALSE),
+    .should_act  = (.is_pac_no_id | .is_unresolv_md) & .no_rc_id & .name_key %in% combined_not_pac_names,
+    contributor_type = if_else(.should_act & .is_pac_no_id, "individual_or_org", contributor_type),
+    is_resolvable    = if_else(.should_act, TRUE, is_resolvable)
+  ) %>%
+  select(-starts_with("."))
+
+cat(sprintf(
+  "Reclassified %d pac_no_id → individual_or_org; set is_resolvable=TRUE on %d major_donor_ie_committee rows\n",
+  sum(over_5k_tagged$contributor_type == "individual_or_org" &
+        norm_pac_name(coalesce(over_5k_tagged$contributor_name, "")) %in% combined_not_pac_names, na.rm = TRUE),
+  sum(over_5k_tagged$contributor_type == "major_donor_ie_committee" &
+        over_5k_tagged$is_resolvable &
+        norm_pac_name(coalesce(over_5k_tagged$contributor_name, "")) %in% combined_not_pac_names, na.rm = TRUE)
+))
 
 # resolvable major donor/IE IDs — classified directly (name/occupation), not via PAC review
 # unresolvable major donor/IE PACs (not in this set) are kept in the queue
@@ -1956,11 +2061,12 @@ no_id_pac_contributors <- over_5k_tagged %>%
 combined_review_queue <- pac_resolvable_fractions %>%
   filter(
     is.na(resolvable_fraction) | resolvable_fraction < 1 |
+    depth == 5 | # max depth reached - have to be classified manually
     pac_id %in% dc_pac_ids$pac_id |
     coalesce(is_candidate_pac, FALSE) |
     coalesce(suspected_federal_pac, FALSE) |
     status == "unresolved" |
-    coalesce(small_dollar_amount, 0) > 0 |
+    #coalesce(small_dollar_amount, 0) > 0 |
     coalesce(under_5k_amount, 0) > 0 |
     pac_id %in% unresolvable_contributor_ids
   ) %>%
@@ -1998,6 +2104,7 @@ combined_review_queue <- pac_resolvable_fractions %>%
       coalesce(unknown_data_sufficiency, FALSE)                            ~ "unknown_data_sufficiency",
       total_direct_over_5k == 0                                           ~ "no_over_5k_contributors",
       pct_resolvable < OVER_5K_COVERAGE_THRESHOLD                          ~ "low_pct_resolvable",
+      depth == 5                                                          ~ "max_depth_reached",
       TRUE                                                                 ~ "other"
     )
   ) %>%
@@ -2020,49 +2127,6 @@ combined_review_queue <- pac_resolvable_fractions %>%
 nrow(combined_review_queue)
 ```
 
-```{r}
-combined_review_queue %>% filter(toupper(Contributor.Name) %in% toupper(pac_manual_review$Contributor.Name))
-combined_review_queue %>% filter(pac_id %in% pac_manual_review$pac_id)
-```
-
-```{r}
-combined_review_queue %>% filter(is.na(pac_id))
-```
-
-
-```{r}
-new_review <- read.csv("../04_assign_classifications/04_inputs/pac_review_queue_w_review_09-25-26.csv")
-```
-
-```{r}
-combined_review_queue %>% filter(toupper(Contributor.Name) %in% toupper(new_review$Contributor.Name))
-```
-
-
-```{r}
-pac_manual_review %>% filter(grepl("Grove Action",Contributor.Name))
-```
-
-
-```{r}
-pacs2 <- read.csv("../04_assign_classifications/04_inputs/pac_manual_review_09-08-26.csv")
-```
-
-
-
-```{r}
-combined_review_queue <- combined_review_queue %>% filter(!(toupper(Contributor.Name) %in% toupper(pacs2$Contributor.Name)))
-```
-
-```{r}
-combined_review_queue %>% filter(unresolvable_reason == "candidate_pac")
-```
-
-
-```{r}
-pac_manual_review %>% filter(grepl("ADVOCACY",toupper(Contributor.Name)))
-```
-
 
 ```{r, eval = FALSE}
 # data check
@@ -2076,24 +2140,13 @@ combined_review_queue %>% filter(unresolvable_reason == "no_contributor_data")
 combined_review_queue %>% filter(unresolvable_reason == "suspected_federal_pac")
 ```
 
-whats happening here: 
+**look at this case (note to self)** 
 pac_id
 <chr>
 Contributor.Name
 <chr>
 900161	NA
-
 - 14842266 ;	No on Prop 44 - Stop the Attack on Patients and Community Health Clinics
-
-
-```{r}
-id_map %>% filter(XREF_FILER_ID == "1494977")
-```
-
-
-```{r}
-nrow(combined_review_queue)
-```
 
 
 ```{r}
@@ -2155,7 +2208,7 @@ cat(sprintf("Self-contributions in traversal PACs: %d rows across %d PACs\n",
 
 write_csv(self_contributions_review, "01_outputs/self_contributions_review_queue.csv")
 ```
-- 46 rows
+
 
 # BUILD PAC CLASSIFICATION INPUT
 
@@ -2278,90 +2331,6 @@ normalize_missing <- function(x) {
 
 
 ```{r}
-already_classified_files <- list.files(
-  "01_inputs",
-  pattern = "^already_classified_contributions_.*\\.csv$",
-  full.names = TRUE
-)
-
-if (length(already_classified_files) > 0) {
-  most_recent <- already_classified_files[which.max(file.mtime(already_classified_files))]
-  cat(sprintf("Loading %s for PAC contributor UUID match-back\n", basename(most_recent)))
-
-  categorized_pac <- read_csv(most_recent, col_types = cols(.default = "c")) %>%
-    mutate(Amount = as.numeric(Amount))
-
-  # PAC rows in older already-classified files have Recipient.Committee.ID = NA because
-  # pac_classification_input used parent_pac_id (not Recipient.Committee.ID) as the key.
-  # Recover parent_pac_id via the prior pac_classification_input.csv output, joining on uuid.
-  prior_pac_input_path <- "01_outputs/pac_classification_input.csv"
-  if (any(is.na(categorized_pac$Recipient.Committee.ID)) && file.exists(prior_pac_input_path)) {
-    prior_pac_input <- read_csv(prior_pac_input_path, col_types = cols(.default = "c")) %>%
-      select(uuid, parent_pac_id) %>%
-      mutate(parent_pac_id = sub("\\.0$", "", trimws(parent_pac_id)))
-    categorized_pac <- categorized_pac %>%
-      left_join(prior_pac_input, by = "uuid") %>%
-      mutate(Recipient.Committee.ID = coalesce(
-        na_if(trimws(Recipient.Committee.ID), ""),
-        na_if(trimws(parent_pac_id), "")
-      )) %>%
-      select(-parent_pac_id)
-    cat(sprintf("  Recovered Recipient.Committee.ID for %d PAC rows via prior pac_classification_input.csv\n",
-                sum(!is.na(categorized_pac$Recipient.Committee.ID))))
-  }
-
-  # strip trailing .0 
-  categorized_pac <- categorized_pac %>%
-    mutate(Recipient.Committee.ID = sub("\\.0+$", "", trimws(coalesce(Recipient.Committee.ID, ""))))
-  categorized_pac$Recipient.Committee.ID[categorized_pac$Recipient.Committee.ID == ""] <- NA_character_
-
-  # sanity check 
-  cat(sprintf("  %d rows still have Recipient.Committee.ID = NA after recovery (will be dropped)\n",
-              sum(is.na(categorized_pac$Recipient.Committee.ID))))
-
-  # check (b): every (Recipient.Committee.ID, Recipient.Name) combo in categorized_pac
-  # should be a known combo in contributions_full. An unknown combo means the wrong ID
-  # was propagated to a recipient that doesn't appear with that ID in the current data.
-  known_id_name_combos <- contributions_full %>%
-    filter(!is.na(Recipient.Committee.ID), !is.na(Recipient.Name)) %>%
-    distinct(Recipient.Committee.ID, Recipient.Name)
-
-  id_name_check <- categorized_pac %>%
-    filter(!is.na(Recipient.Committee.ID), !is.na(Recipient.Name)) %>%
-    distinct(Recipient.Committee.ID, Recipient.Name) %>%
-    anti_join(known_id_name_combos, by = c("Recipient.Committee.ID", "Recipient.Name")) %>%
-    arrange(Recipient.Committee.ID)
-
-  cat(sprintf("  (b) ID→name consistency: %d (ID, name) combos not found in contributions_full — investigate id_name_check\n",
-              nrow(id_name_check)))
-  if (nrow(id_name_check) > 0) print(id_name_check)
-
-
-  categorized_pac <- categorized_pac %>%
-    
-    filter(!is.na(Recipient.Committee.ID), Recipient.Committee.ID != "") %>%
-    mutate(
-      legacy_match_id = make_row_hash(
-        Contributor.Name, Contributor.ID, Amount, Recipient.Committee.ID,
-        Contributor.City, normalize_missing(Contributor.Employer),
-        normalize_missing(Contributor.Occupation), pad_zip(Contributor.Zip.Code),
-        Start.Date
-      )
-    ) %>%
-    group_by(legacy_match_id) %>%
-    mutate(dup_rank = row_number()) %>%
-    ungroup()
-
-  cat(sprintf("  %d previously classified PAC contribution rows available for match-back\n",
-              nrow(categorized_pac)))
-} else {
-  categorized_pac <- NULL
-  cat("No already_classified_contributions file found — all PAC contributor UUIDs will be fresh.\n")
-}
-```
-### run this instead..
-
-```{r}
 categorized_pac <- read_csv("01_inputs/already_classified_contributions_09-13-26.csv")
 which(is.na(categorized_pac$Recipient.Committee.ID))
 categorized_pac <- categorized_pac %>%
@@ -2377,11 +2346,6 @@ categorized_pac <- categorized_pac %>%
   group_by(legacy_match_id) %>%
   mutate(dup_rank = row_number()) %>%
   ungroup()
-```
-
-
-```{r}
-which(is.na(categorized_pac$Recipient.Committee.ID))
 ```
 
 ```{r}
@@ -2462,47 +2426,26 @@ if (nrow(field_check) > 0) {
 }
 ```
 
-```{r}
-field_check$uuid
-```
 
 
-
-```{r}
+```{r, eval=FALSE}
+# SKIP THIS - just data checks (preserving while i debug)
 pac_classification_input %>% filter(uuid == "dbbc2203-85b6-4d68-8758-24fb30d33dea")
-```
-```{r}
+
 categorized_pac %>% filter(uuid == "dbbc2203-85b6-4d68-8758-24fb30d33dea")
-```
-```{r}
-# Does categorized_pac have a row whose legacy_match_id matches Pursue Health LLC?
 categorized_pac %>%
   filter(uuid == "dbbc2203-85b6-4d68-8758-24fb30d33dea") %>%
   select(Contributor.Name, Amount, Recipient.Committee.ID, Start.Date, legacy_match_id, contribution_uu)
 
-```
-
-```{r}
 categorized_pac %>% filter(Contributor.Name == "Pursue Health LLC(Zachary Larson)" & Amount == "38.67")
-```
-
-
-```{r}
 pac_classification_input %>% filter(uuid == "dbbc2203-85b6-4d68-8758-24fb30d33dea")%>%
   select(Contributor.Name, Amount, Recipient.Committee.ID, Start.Date, legacy_match_id, contribution_uuid, uuid)
-```
-```{r}
 # what graph subgraph links these two?
 pac_classification_input %>%
   filter(entity_uuid == "dbbc2203-85b6-4d68-8758-24fb30d33dea") %>%
   select(Contributor.Name, std_contributor_id, effective_Contributor.ID, parent_pac_id)
 
 ```
-
-```{r}
-field_check
-```
-
 
 
 ### save files to use later
@@ -2537,30 +2480,12 @@ cat(sprintf("entity_id_normalized from pac_input.csv: %d / %d PACs matched\n",
             sum(!is.na(pac_classifiability$entity_id_normalized)), nrow(pac_classifiability)))
 ```
 ```{r}
-seed_entity_ids %>% filter(n_entity_ids > 1)
-```
-
-```{r}
-x %>%
+miss <- x %>%
   filter(!is.na(FILER_ID) & trimws(as.character(FILER_ID)) != "") %>%
   mutate(FILER_ID = as.character(FILER_ID)) %>%
-  group_by(FILER_ID) %>% filter(n_distinct(entity_id) > 1)
+  group_by(FILER_ID) %>% filter(n_distinct(entity_id) > 1) %>% distinct(Contributor.Name,Normalized) %>% arrange(FILER_ID) %>% select(Contributor.Name,Normalized)
 ```
 
-```{r}
-seed_entity_ids %>% filter(n_entity_ids > 1)
-```
-```{r}
-contributions_full %>% filter(Recipient.Committee.ID == "1048450") %>% distinct(Recipient.Committee)
-```
-
-```{r}
-contributions_full %>% filter(Contributor.ID == "891044") %>% distinct(Contributor.Name)
-```
-
-```{r}
-id_map %>% filter(FILER_ID == '1048450')
-```
 
 ```{r}
 # entity_id_normalized for non-seed PACs 
@@ -2721,7 +2646,6 @@ write_csv(tibble(pac_id = stuck_pacs),  paste0("01_outputs/pac_stuck_pacs_", tod
 
 ```
 
-
 **NOTE**: 
 UUID conflicts can arise when a ballot measure committee also contributes to
 another PAC, causing it to be traversed in the PAC graph. Its incoming contributions
@@ -2803,14 +2727,4 @@ write_csv(combined_classification_input, paste0("01_outputs/classification_input
 cat("Combined rows:", nrow(combined_classification_input),
     "  (PAC added:", nrow(pac_classification_input), ")\n")
 ```
-
-
-```{r}
-combined_classification_input
-```
-
-```{r}
-contributions_full %>% filter(grepl("MCAMIS, JOHN",toupper(Contributor.Name))) %>% select(Amount, Recipient.Committee,Start.Date,Contributor.Name,Contributor.Employer,Contributor.City)
-```
-
 
